@@ -1,5 +1,5 @@
 import type { RawCatalog } from '../browser/filterClient'
-import type { StarsMeta, SystemsFile } from './schema'
+import { DATA_VERSION, type ConstellationsFile, type StarsMeta, type SystemsFile } from './schema'
 
 const dataUrl = (file: string): string => `${import.meta.env.BASE_URL}data/${file}`
 
@@ -46,4 +46,21 @@ export async function loadCatalog(onProgress: (fraction: number) => void): Promi
   const systems = await systemsPromise
   onProgress(1)
   return { bin, meta, systems }
+}
+
+let constellations: Promise<ConstellationsFile> | null = null
+
+/** The constellation figures: a small optional layer, fetched the first time it is shown. */
+export function loadConstellations(): Promise<ConstellationsFile> {
+  constellations ??= fetchOk('constellations.json')
+    .then((r) => r.json() as Promise<ConstellationsFile>)
+    .then((file) => {
+      if (file.version !== DATA_VERSION) throw new Error('constellations.json sürümü uyuşmuyor.')
+      return file
+    })
+    .catch((error) => {
+      constellations = null // allow a retry next time the layer is switched on
+      throw error
+    })
+  return constellations
 }

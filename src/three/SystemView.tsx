@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Billboard, Html, Line } from '@react-three/drei'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Atlas, PlanetRow } from '../data/atlas'
 import { HZ_NONE, type SystemRecord } from '../data/schema'
+import { SOLAR_BODIES, SUN_TEXTURE, textureUrl, type SolarBody } from '../data/solarBodies'
 import { hash01, orbitRadius, orbitState, planetClass, saturate, starColor, teffToRgb, TEFF_SUN } from '../lib/astro'
 import { sig } from '../lib/format'
 import { useAtlas } from '../store/useAtlas'
@@ -36,14 +37,52 @@ const NOISE_GLSL = /* glsl */ `
   }
 `
 
+/**
+ * A colour map from public/textures, or null until it has arrived (and for good if it never
+ * does — callers then keep their stylised look).
+ */
+function useColorMap(url: string | null): THREE.Texture | null {
+  const gl = useThree((state) => state.gl)
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+  useEffect(() => {
+    if (!url) return
+    let cancelled = false
+    let loaded: THREE.Texture | null = null
+    new THREE.TextureLoader().load(
+      url,
+      (t) => {
+        if (cancelled) {
+          t.dispose()
+          return
+        }
+        t.colorSpace = THREE.SRGBColorSpace
+        t.wrapS = THREE.RepeatWrapping
+        t.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+        loaded = t
+        setTexture(t)
+      },
+      undefined,
+      () => undefined,
+    )
+    return () => {
+      cancelled = true
+      loaded?.dispose()
+      setTexture(null)
+    }
+  }, [url, gl])
+  return texture
+}
+
 // ───────────────────────────────────────────────────────────── star
 
 const starVertex = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vView;
   varying vec3 vObject;
+  varying vec2 vUv;
   void main() {
     vObject = position;
+    vUv = uv;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vNormal = normalize(normalMatrix * normal);
     vView = normalize(-mv.xyz);
@@ -54,9 +93,12 @@ const starVertex = /* glsl */ `
 const starFragment = /* glsl */ `
   uniform vec3 uColor;
   uniform float uTime;
+  uniform sampler2D uMap;
+  uniform float uUseMap;
   varying vec3 vNormal;
   varying vec3 vView;
   varying vec3 vObject;
+  varying vec2 vUv;
   ${NOISE_GLSL}
   void main() {
     float mu = max(dot(normalize(vNormal), normalize(vView)), 0.0);
@@ -64,7 +106,10 @@ const starFragment = /* glsl */ `
     float limb = 0.5 + 0.5 * pow(mu, 0.55);
     float cells = fbm(normalize(vObject) * 7.0 + vec3(0.0, uTime * 0.05, uTime * 0.03));
     vec3 hot = mix(uColor, vec3(1.0), 0.08 + 0.3 * mu);
-    gl_FragColor = vec4(hot * limb * (0.86 + 0.28 * cells), 1.0);
+    vec3 surface = hot * limb * (0.86 + 0.28 * cells);
+    // The Sun has a real map; it only needs the limb darkening.
+    if (uUseMap > 0.5) surface = texture2D(uMap, vUv).rgb * (0.66 + 0.4 * pow(mu, 0.6));
+    gl_FragColor = vec4(surface, 1.0);
     #include <colorspace_fragment>
   }
 `
@@ -93,16 +138,21 @@ const uvVertex = /* glsl */ `
   }
 `
 
-function Star({ color, radius }: { color: THREE.Color; radius: number }) {
+function Star({ color, radius, map }: { color: THREE.Color; radius: number; map: THREE.Texture | null }) {
   const surface = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: starVertex,
         fragmentShader: starFragment,
-        uniforms: { uColor: { value: color }, uTime: { value: 0 } },
+        uniforms: { uColor: { value: color }, uTime: { value: 0 }, uMap: { value: null }, uUseMap: { value: 0 } },
       }),
     [color],
   )
+  useEffect(() => {
+    surface.uniforms.uMap.value = map
+    surface.uniforms.uUseMap.value = map ? 1 : 0
+  }, [surface, map])
+  const sphere = useRef<THREE.Mesh>(null)
   // The glow quad is `GLOW` star-radii across; uCore marks where the photosphere ends inside it.
   const GLOW = 11
   const glow = useMemo(
@@ -119,13 +169,14 @@ function Star({ color, radius }: { color: THREE.Color; radius: number }) {
   )
   useEffect(() => () => surface.dispose(), [surface])
   useEffect(() => () => glow.dispose(), [glow])
-  useFrame((state) => {
+  useFrame((state, delta) => {
     surface.uniforms.uTime.value = state.clock.elapsedTime
+    if (map && sphere.current) sphere.current.rotation.y += delta * 0.02
   })
 
   return (
     <group>
-      <mesh material={surface}>
+      <mesh ref={sphere} material={surface}>
         <sphereGeometry args={[radius, 64, 48]} />
       </mesh>
       <Billboard>
@@ -143,8 +194,10 @@ const planetVertex = /* glsl */ `
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
   varying vec3 vObject;
+  varying vec2 vUv;
   void main() {
     vObject = position;
+    vUv = uv;
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorldPosition = world.xyz;
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
@@ -191,6 +244,90 @@ const planetFragment = /* glsl */ `
     #include <colorspace_fragment>
   }
 `
+
+/** A planet we have a real map of: the map, lit by the star, with a thin glow at the limb. */
+const mappedFragment = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform vec3 uAtmosphere;
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+  void main() {
+    vec3 n = normalize(vWorldNormal);
+    vec3 toStar = normalize(-vWorldPosition); // the star sits at the origin of the system view
+    vec3 toEye = normalize(cameraPosition - vWorldPosition);
+    float day = smoothstep(-0.12, 0.32, dot(n, toStar));
+    vec3 color = texture2D(uMap, vUv).rgb * (0.1 + 0.9 * day);
+    float rim = pow(1.0 - max(dot(n, toEye), 0.0), 3.2);
+    color += uAtmosphere * rim * (0.25 + 0.75 * day);
+    gl_FragColor = vec4(color, 1.0);
+    #include <colorspace_fragment>
+  }
+`
+
+const ringVertex = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+  void main() {
+    vUv = uv;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`
+
+const ringFragment = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform vec3 uCenter;
+  uniform float uRadius;
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+  void main() {
+    vec4 ring = texture2D(uMap, vec2(vUv.x, 0.5));
+    // The planet's shadow: does the way from here to the star pass through the globe?
+    vec3 toStar = normalize(-vWorldPosition);
+    vec3 fromCenter = vWorldPosition - uCenter;
+    float along = dot(fromCenter, toStar);
+    float miss = length(fromCenter - toStar * along);
+    float lit = along < 0.0 ? smoothstep(uRadius * 0.94, uRadius * 1.04, miss) : 1.0;
+    gl_FragColor = vec4(ring.rgb * (0.16 + 0.84 * lit), ring.a);
+    #include <colorspace_fragment>
+  }
+`
+
+function Rings({ rings, radius, center }: { rings: NonNullable<SolarBody['rings']>; radius: number; center: RefObject<THREE.Group | null> }) {
+  const map = useColorMap(textureUrl(rings.texture))
+  const geometry = useMemo(() => {
+    const inner = rings.inner * radius
+    const outer = rings.outer * radius
+    const g = new THREE.RingGeometry(inner, outer, 160, 1)
+    // RingGeometry maps the picture flat; the strip wants "u = how far out".
+    const position = g.attributes.position
+    const uv = g.attributes.uv
+    for (let i = 0; i < position.count; i++) uv.setXY(i, (Math.hypot(position.getX(i), position.getY(i)) - inner) / (outer - inner), 0.5)
+    return g
+  }, [rings, radius])
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: ringVertex,
+        fragmentShader: ringFragment,
+        uniforms: { uMap: { value: null }, uCenter: { value: new THREE.Vector3() }, uRadius: { value: radius } },
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    [radius],
+  )
+  useEffect(() => () => geometry.dispose(), [geometry])
+  useEffect(() => () => material.dispose(), [material])
+  useFrame(() => {
+    material.uniforms.uMap.value = map
+    if (center.current) (material.uniforms.uCenter.value as THREE.Vector3).copy(center.current.position)
+  })
+  if (!map) return null
+  return <mesh geometry={geometry} material={material} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2} />
+}
 
 interface Palette {
   a: string
@@ -294,9 +431,11 @@ interface PlanetProps {
   scale: number
   starLuminosity: number | undefined
   clock: RefObject<number>
+  /** Set for the Sun's own planets: draw the real map instead of a stylised globe. */
+  body: SolarBody | undefined
 }
 
-function Planet({ item, scale, starLuminosity, clock }: PlanetProps) {
+function Planet({ item, scale, starLuminosity, clock, body }: PlanetProps) {
   const index = item.planet.index
   const selected = useAtlas((s) => s.selectedPlanet === index)
   const hovered = useAtlas((s) => s.hoverPlanet === index)
@@ -323,7 +462,25 @@ function Planet({ item, scale, starLuminosity, clock }: PlanetProps) {
   }, [item, starLuminosity])
   useEffect(() => () => material.dispose(), [material])
 
+  // The real map, once it has loaded; the stylised globe stands in until then.
+  const map = useColorMap(body ? textureUrl(body.texture) : null)
+  const mapped = useMemo(
+    () =>
+      body && map
+        ? new THREE.ShaderMaterial({
+            vertexShader: planetVertex,
+            fragmentShader: mappedFragment,
+            uniforms: { uMap: { value: map }, uAtmosphere: { value: new THREE.Color(body.limb) } },
+          })
+        : null,
+    [body, map],
+  )
+  useEffect(() => () => mapped?.dispose(), [mapped])
+
   const tilt = useMemo(() => (hash01(item.planet.id, 4) - 0.5) * 0.7, [item])
+  const axis: [number, number, number] = body ? [0, 0, THREE.MathUtils.degToRad(body.tilt)] : [tilt, 0, tilt * 0.5]
+  /** How far the drawn body reaches from its centre, in globe radii (rings included). */
+  const reach = body?.rings ? body.rings.outer * 1.06 : 1
 
   useFrame((_, delta) => {
     const g = group.current
@@ -371,9 +528,12 @@ function Planet({ item, scale, starLuminosity, clock }: PlanetProps) {
         depthWrite={false}
       />
       <group ref={group}>
-        <mesh ref={globe} material={material} rotation={[tilt, 0, tilt * 0.5]}>
-          <sphereGeometry args={[item.size, 48, 32]} />
-        </mesh>
+        <group rotation={axis}>
+          <mesh ref={globe} material={mapped ?? material} scale={[1, body?.flattening ?? 1, 1]}>
+            <sphereGeometry args={[item.size, body ? 96 : 48, body ? 64 : 32]} />
+          </mesh>
+          {body?.rings && <Rings rings={body.rings} radius={item.size} center={group} />}
+        </group>
         {/* Generous invisible target so small planets are easy to hover and click. */}
         <mesh onPointerOver={over} onPointerOut={out} onClick={click}>
           <sphereGeometry args={[Math.max(item.size * 1.9, 0.34), 16, 12]} />
@@ -388,7 +548,7 @@ function Planet({ item, scale, starLuminosity, clock }: PlanetProps) {
           )}
           {active && (
             <mesh>
-              <ringGeometry args={[item.size * 2.0 + 0.04, item.size * 2.0 + 0.075, 64]} />
+              <ringGeometry args={[item.size * Math.max(2.0, reach) + 0.04, item.size * Math.max(2.0, reach) + 0.075, 96]} />
               <meshBasicMaterial color={selected ? '#ffffff' : '#cbd5e1'} transparent opacity={selected ? 0.95 : 0.6} depthWrite={false} />
             </mesh>
           )}
@@ -495,6 +655,7 @@ export function SystemView({ atlas, systemIndex }: { atlas: Atlas; systemIndex: 
   }, [atlas, systemIndex, system])
   const layout = useMemo(() => layoutSystem(system, planets), [system, planets])
   const color = useMemo(() => starTint(atlas, system), [atlas, system])
+  const sunMap = useColorMap(system.builtin ? textureUrl(SUN_TEXTURE) : null)
 
   // Simulated time in days; advanced here, read by every planet.
   const clock = useRef(0)
@@ -509,13 +670,20 @@ export function SystemView({ atlas, systemIndex }: { atlas: Atlas; systemIndex: 
 
   return (
     <group onPointerMissed={() => useAtlas.getState().selectPlanet(null)}>
-      <Star color={color} radius={layout.starRadius} />
+      <Star color={color} radius={layout.starRadius} map={sunMap} />
       <ScaleRings layout={layout} />
       {layout.hz && <HabitableZone hz={layout.hz} />}
       {layout.planets
         .filter((item) => item.drawn)
         .map((item) => (
-          <Planet key={item.planet.id} item={item} scale={layout.scale} starLuminosity={system.lum} clock={clock} />
+          <Planet
+            key={item.planet.id}
+            item={item}
+            scale={layout.scale}
+            starLuminosity={system.lum}
+            clock={clock}
+            body={system.builtin ? SOLAR_BODIES[item.planet.id] : undefined}
+          />
         ))}
     </group>
   )

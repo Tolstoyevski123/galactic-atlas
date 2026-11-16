@@ -6,6 +6,7 @@
  *   NASA TAP ─┘
  */
 
+import { writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -17,11 +18,13 @@ import {
   HZ_CONSERVATIVE,
   HZ_OPTIMISTIC,
   SPECT_UNKNOWN,
+  type ConstellationsFile,
   type PlanetRecord,
   type StarsMeta,
   type SystemRecord,
   type SystemsFile,
 } from '../../src/data/schema'
+import { CONSTELLATIONS_URL, loadConstellationFigures } from './constellations'
 import { crossmatch, parseCatalogNumber, type HostInput, type MatchMethod } from './crossmatch'
 import { packStars, writeOutputs, type StarRow } from './emit'
 import { loadExoplanets, TAP_URL, type NasaRow } from './fetch_exoplanets'
@@ -340,6 +343,13 @@ async function main(): Promise<void> {
     starRows.push(s.row)
   }
 
+  // ── Constellation figures, as rows of the table just built.
+  console.log('▸ Takımyıldız çizgileri okunuyor…')
+  const rowOfHip = new Map<number, number>()
+  for (let row = 0; row < hygCount; row++) if (starRows[row].hip > 0) rowOfHip.set(starRows[row].hip, row)
+  const constellations = await loadConstellationFigures(cacheDir, refresh, rowOfHip)
+  console.log(`  ${constellations.figures.length} takımyıldız, ${constellations.segments.toLocaleString('tr')} çizgi parçası`)
+
   // ── Systems and planets.
   console.log('▸ Yaşanabilir bölgeler hesaplanıyor…')
   // Dictionary-encode the repetitive text columns, most frequent value first.
@@ -485,6 +495,9 @@ async function main(): Promise<void> {
     systemsWithInclination,
     planetsInConservativeHz: hzConservative,
     planetsInOptimisticHzOnly: hzOptimistic,
+    constellations: constellations.figures.length,
+    constellationSegments: constellations.segments,
+    constellationStarsMissing: constellations.missingStars,
   }
   const meta: StarsMeta = {
     ...packed.meta,
@@ -499,7 +512,13 @@ async function main(): Promise<void> {
         license: 'Public (NASA/Caltech; atıf gerekli)',
         retrieved: today,
       },
+      { name: 'Stellarium — "modern" gök kültürü (takımyıldız çizgileri)', url: CONSTELLATIONS_URL, license: 'CC BY-SA 4.0', retrieved: today },
     ],
+  }
+  const constellationsFile: ConstellationsFile = {
+    version: DATA_VERSION,
+    source: { name: 'Stellarium — modern sky culture', url: CONSTELLATIONS_URL, license: 'CC BY-SA 4.0' },
+    figures: constellations.figures,
   }
   const systemsFile: SystemsFile = {
     version: DATA_VERSION,
@@ -511,6 +530,7 @@ async function main(): Promise<void> {
     systems,
   }
   writeOutputs(outDir, packed.buffer, meta, systemsFile)
+  writeFileSync(join(outDir, 'constellations.json'), JSON.stringify(constellationsFile))
 
   const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(2)} MB`
   console.log('')

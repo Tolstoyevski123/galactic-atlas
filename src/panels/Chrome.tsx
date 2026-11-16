@@ -209,6 +209,17 @@ export function About({ atlas }: { atlas: Atlas }) {
                 {count(atlas.exoPlanetCount)} onaylı gezegen ve yıldızlarının parametreleri (DOI 10.26133/NEA13). Bu çalışma, NASA’nın Ötegezegen
                 Keşif Programı kapsamında Caltech tarafından işletilen NASA Exoplanet Archive’ı kullanmıştır.
               </Source>
+              <Source name="Digitized Sky Survey — STScI / NASA" href="https://archive.stsci.edu/dss/">
+                Yıldız panellerindeki gökyüzü fotoğrafları: Palomar ve UK Schmidt teleskoplarının fotoğraf plakaları, STScI’de NASA desteğiyle
+                sayısallaştırıldı. Renkli bileşim CDS tarafından hazırlandı; NASA/IPAC IRSA üzerinden, seçtiğiniz yıldız için o an istenir.
+              </Source>
+              <Source name="NASA Science 3B modelleri ve Solar Dynamics Observatory" href="https://science.nasa.gov/3d-resources/">
+                Güneş Sistemi’ndeki Güneş, gezegen ve Satürn halkası dokuları NASA’nın uzay aracı görüntülerinden derlediği haritalardır. Güneş
+                panelindeki görüntü, SDO uydusunun en güncel karesidir.
+              </Source>
+              <Source name="Stellarium — takımyıldız çizgileri" href="https://github.com/Stellarium/stellarium/tree/master/skycultures/modern">
+                88 takımyıldızın çubuk figürleri ("modern" gök kültürü). Lisans: CC BY-SA 4.0.
+              </Source>
             </ul>
           </div>
 
@@ -229,7 +240,19 @@ export function About({ atlas }: { atlas: Atlas }) {
                 Haritadaki altın halkalar o yıldızın gezegen yörüngeleridir: halka sayısı ve oranları gerçek, yörünge düzleminin eğimi
                 ölçülmüşse gerçektir (geçiş yapan sistemler Güneş’ten bakınca kenardan görünür). Boyutları büyütülmüş, hızları sıkıştırılmıştır.
               </li>
-              <li>Sistem görünümünde uzaklıklar √ ölçeğindedir; gezegen küreleri büyütülmüş, renkleri ve yörünge yönelimleri temsilidir.</li>
+              <li>
+                Sistem görünümünde uzaklıklar √ ölçeğindedir; gezegen küreleri büyütülmüş, yörünge yönelimleri temsilidir. Güneş Sistemi’nin
+                yüzeyleri gerçektir; ötegezegenlerin ise fotoğrafı yoktur — hiçbirinin yüzeyi bugüne dek görüntülenemedi — o yüzden küreleri
+                ölçülen boyut ve sıcaklıktan üretilen temsillerdir.
+              </li>
+              <li>
+                Yıldız fotoğraflarında parlak yıldızların çevresindeki hale ve haç, teleskop optiğinin ve fotoğraf plakasının izidir; yıldızın
+                kendisi oradaki tek bir noktadır.
+              </li>
+              <li>
+                Takımyıldız çizgileri yıldızların gerçek 3B konumları arasındadır: Güneş’in yanından tanıdık görünür, uzaklaştıkça yakın
+                yıldızlardan başlayarak çözülürler.
+              </li>
               <li>Samanyolu bandı katalog verisi değil, doğru yönlendirilmiş prosedürel bir arka plandır.</li>
             </ul>
           </div>

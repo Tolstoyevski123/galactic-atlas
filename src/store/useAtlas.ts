@@ -35,10 +35,11 @@ interface Prefs {
   unit: Unit
   showLabels: boolean
   showMilkyWay: boolean
+  showConstellations: boolean
   mirrorFilter: boolean
 }
 
-const DEFAULT_PREFS: Prefs = { unit: 'ly', showLabels: true, showMilkyWay: true, mirrorFilter: true }
+const DEFAULT_PREFS: Prefs = { unit: 'ly', showLabels: true, showMilkyWay: true, showConstellations: true, mirrorFilter: true }
 
 /** Duration of the fade that hides the switch between the map and a system, ms. */
 export const VEIL_MS = 380
@@ -109,7 +110,13 @@ let nonce = 0
 let pendingDive: { nonce: number; run: () => void } | null = null
 
 const persistPrefs = (s: Prefs) =>
-  writeJson('prefs', { unit: s.unit, showLabels: s.showLabels, showMilkyWay: s.showMilkyWay, mirrorFilter: s.mirrorFilter })
+  writeJson('prefs', {
+    unit: s.unit,
+    showLabels: s.showLabels,
+    showMilkyWay: s.showMilkyWay,
+    showConstellations: s.showConstellations,
+    mirrorFilter: s.mirrorFilter,
+  })
 
 export const useAtlas = create<AtlasState>()(
   subscribeWithSelector((set, get) => {

@@ -29,6 +29,7 @@ import {
   StarIcon,
 } from '../ui/icons'
 import { CompareWidget, SizeComparison } from './CompareWidget'
+import { StarPhoto, SunPhoto } from './SkyPhoto'
 
 async function copyShareLink(): Promise<void> {
   const store = useAtlas.getState()
@@ -262,7 +263,7 @@ function StarDetail({ atlas, star }: { atlas: Atlas; star: number }) {
         <div className="mt-3.5 flex gap-2">
           {system && (
             <PrimaryButton onClick={() => store().openSystem(systemIndex)}>
-              <OrbitIcon size={16} /> {isSol ? 'Güneş Sistemi’ne dal' : 'Sisteme dal'}
+              <OrbitIcon size={16} /> Sisteme dal
             </PrimaryButton>
           )}
           <PrimaryButton tone="plain" onClick={() => store().selectStar(star, { fly: true })}>
@@ -270,6 +271,18 @@ function StarDetail({ atlas, star }: { atlas: Atlas; star: number }) {
           </PrimaryButton>
         </div>
       </div>
+
+      {isSol ? (
+        <Section title="Güneş şu an">
+          <SunPhoto />
+        </Section>
+      ) : (
+        equatorial && (
+          <Section title="Gökyüzündeki gerçek görüntüsü">
+            <StarPhoto key={star} name={atlas.names[star]} raDeg={equatorial.raHours * 15} decDeg={equatorial.decDeg} mag={atlas.mag[star]} dist={atlas.dist[star]} />
+          </Section>
+        )
+      )}
 
       {system && planets.length > 0 && (
         <Section title={isSol ? 'Gezegenler' : 'Onaylı gezegenler'}>
@@ -518,8 +531,10 @@ function SystemDetail({ atlas, systemIndex }: { atlas: Atlas; systemIndex: numbe
       )}
 
       <p className="border-t border-line px-4 py-3 text-[11px] leading-relaxed text-faint">
-        Sahnede uzaklıklar √ ölçeğindedir, gezegen küreleri görünürlük için büyütülmüştür. Yörünge yönelimleri ve gezegen görünümleri
-        temsilidir; ölçülen değerler bu paneldedir.
+        Sahnede uzaklıklar √ ölçeğindedir, gezegen küreleri görünürlük için büyütülmüştür.{' '}
+        {system.builtin
+          ? 'Güneş ve gezegenlerin yüzeyleri, NASA’nın uzay aracı görüntülerinden derlediği gerçek haritalardır; yörünge yönelimleri temsilidir.'
+          : 'Ötegezegenlerin yüzeyini gösteren bir fotoğraf henüz yok: küreler, ölçülen boyut ve sıcaklığa göre çizilmiş temsillerdir. Yörünge yönelimleri de temsilidir; ölçülen değerler bu paneldedir.'}
       </p>
     </div>
   )

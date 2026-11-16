@@ -8,10 +8,16 @@
 |---|---|
 | ![TRAPPIST-1 sistemi](docs/sistem.png) | <img src="docs/mobil.png" alt="Telefon görünümü" width="260"> |
 
+| Yıldızın gerçek gökyüzü fotoğrafı ve takımyıldız çizgileri | Güneş Sistemi, NASA'nın gerçek yüzey haritalarıyla |
+|---|---|
+| ![Sirius ve gökyüzü fotoğrafı](docs/yildiz.png) | ![Güneş Sistemi](docs/gunes-sistemi.png) |
+
 ## Neler var
 
 - **3B yıldız haritası** — HYG kataloğundan 109.404 yıldız gerçek konumlarıyla, tek çizim çağrısında. Parlaklık fizikseldir: her yıldız, kameranın bulunduğu noktadan görüneceği kadirle çizilir; yaklaştıkça parlar.
 - **Ötegezegen sistemleri** — onaylı gezegeni olan 4.862 yıldız altın renkle işaretli. Yakındakiler haritada **minyatür sistem** olarak çizilir: gezegen başına bir yörünge (oranlar gerçek), üzerinde dönen gezegenler, yaşanabilir bölgedekiler yeşil. Yörünge düzleminin eğimi 3.694 sistemde NASA'nın ölçtüğü değerdir — geçiş (transit) yapan sistemler Güneş'ten bakınca kenardan görünür; Güneş Sistemi de tutulum düzlemindeki gerçek eğimiyle durur. Tıklayın, kamera uçsun; *Sisteme dal* ile tam sistem ve **yaşanabilir bölge** (HZ) açılır.
+- **Gerçek görüntüler** — her yıldızın panelinde, o yıldızın gökyüzündeki **gerçek fotoğrafı** (Digitized Sky Survey; yakınlaşıp uzaklaşabilirsiniz, kuzey yukarıda). Güneş'in panelinde NASA Solar Dynamics Observatory'nin **o günkü** görüntüsü. Güneş Sistemi'nde Güneş ve sekiz gezegen, NASA'nın uzay aracı görüntülerinden derlediği **gerçek yüzey haritalarıyla** döner; Satürn halkalarıyla. Ötegezegenlerin ise fotoğrafı yoktur (bkz. aşağıda), onlar temsilî kalır.
+- **Takımyıldız çizgileri** — 88 takımyıldızın çubuk figürleri, yıldızların gerçek 3B konumları arasında silik çizgiler olarak. Güneş'in yanından bakınca tanıdık şekiller; uzaklaştıkça yakın yıldızlardan başlayarak dağılırlar — takımyıldız bir yer değil, bir bakış doğrultusudur.
 - **Veri tarayıcısı** — yıldızlar ve gezegenler için sanallaştırılmış tablo; anlık arama (`alfa centauri`, `HD 209458`, `trappist`…), çoklu filtre, her kolona göre sıralama. Filtreleme bir Web Worker'da çalışır.
 - **İki yönlü bağ** — listede bir satıra tıklayın, kamera oraya uçar; haritada bir yıldıza tıklayın, liste o satıra kayar. Filtre açıkken haritada yalnızca eşleşen yıldızlar parlak kalır.
 - **Güneş Sistemi ile karşılaştırma** — her sistem, logaritmik bir eksende bizimkiyle yan yana; gezegen boyutu Dünya ve Jüpiter'e göre.
@@ -29,18 +35,19 @@ npm run build      # tip denetimi + üretim derlemesi (dist/)
 npm run preview    # derlemeyi yerelde sun
 ```
 
-Katalog verisi depoda hazır gelir (`public/data/`). Yeniden üretmek için:
+Katalog verisi ve gezegen dokuları depoda hazır gelir (`public/data/`, `public/textures/`). Yeniden üretmek için:
 
 ```bash
 npm run data            # önbellekteki kaynaklardan üret
-npm run data:refresh    # HYG ve NASA'dan yeniden indir, sonra üret
+npm run data:refresh    # HYG, NASA ve Stellarium'dan yeniden indir, sonra üret
+npm run textures        # NASA'nın 3B modellerinden gezegen dokularını çıkar (kurulu Chrome/Edge ile)
 ```
 
 Testler:
 
 ```bash
-npm test           # 46 birim testi (HZ modeli, çapraz eşleme, filtre motoru, yörünge matematiği, üretilen veri)
-npm run build && npm run e2e   # 22 uçtan uca kontrol; kurulu Chrome/Edge ile, başsız
+npm test           # birim testleri (HZ modeli, çapraz eşleme, filtre motoru, yörünge matematiği, HEALPix, üretilen veri)
+npm run build && npm run e2e   # uçtan uca kontroller; kurulu Chrome/Edge ile, başsız
 ```
 
 | Kısayol | |
@@ -59,8 +66,9 @@ npm run build && npm run e2e   # 22 uçtan uca kontrol; kurulu Chrome/Edge ile, 
 │  HYG CSV ─┐                                                       │
 │           ├─► temizle ─► host ↔ HYG eşle ─► HZ ─► public/data/    │
 │  NASA TAP ┘             (+ sentetik yıldız)      stars.bin (4,4 MB)│
-│                                                  stars.meta.json  │
-│                                                  systems.json     │
+│  Stellarium ─► takımyıldız çizgileri             stars.meta.json  │
+│  NASA 3B modelleri ─► public/textures/           systems.json     │
+│                                                  constellations.json│
 └──────────────────────────────┬───────────────────────────────────┘
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
@@ -77,7 +85,7 @@ npm run build && npm run e2e   # 22 uçtan uca kontrol; kurulu Chrome/Edge ile, 
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-Çalışma zamanında uzak sunucuya istek atılmaz; üç veri dosyası uygulamayla aynı yerden gelir.
+Katalog verisi ve gezegen dokuları uygulamayla aynı yerden gelir. Çalışma zamanında dışarıya yalnızca fotoğraflar için gidilir: seçilen yıldızın çevresindeki birkaç gökyüzü karosu (NASA/IPAC IRSA) ve Güneş'in güncel görüntüsü (NASA SDO). Bunlar düz `<img>` istekleridir; ulaşılamazsa panel bunu söyler, uygulamanın geri kalanı çevrimdışı da çalışır.
 
 ### Tasarım kararları
 
@@ -89,21 +97,28 @@ npm run build && npm run e2e   # 22 uçtan uca kontrol; kurulu Chrome/Edge ile, 
 
 **Filtre motoru** (`src/browser/filterEngine.ts`). Kolonlar tipli diziler (struct-of-arrays); sorgu bir Web Worker'da çalışır ve eşleşen satır numaralarını aktarılabilir bir `Int32Array` olarak döndürür. Tablo yalnızca ekrandaki ~30 satırı DOM'a koyar. Worker başlatılamazsa aynı motor ana iş parçacığında çalışır.
 
+**Gökyüzü fotoğrafı** (`src/lib/hips.ts`, `src/panels/SkyPhoto.tsx`). Digitized Sky Survey'in renkli bileşimi HiPS olarak yayımlanır: gökyüzü HEALPix hücrelerine bölünür, her hücre 512 piksellik bir karodur. Yıldızın çevresine düşen karolar bulunur (iç içe HEALPix indeksi, Górski ve ark. 2005), köşeleri teğet düzleme izdüşürülür ve bir `<canvas>`'a kuzey yukarı, doğu solda olacak şekilde dikilir. Piksel okunmadığı için CORS'a bağımlı değildir. Karolar gelmezse STScI arşivindeki tek bantlı tarama devreye girer.
+
+**Takımyıldızlar** (`src/three/Constellations.tsx`). Çizgiler yıldızların gerçek konumları arasındadır, bu yüzden yalnızca Güneş'e yakın bir bakış noktasından tanıdık görünürler. Her parça, yıldızlarının uzaklığı bakış noktasının Güneş'ten uzaklığına oranla ne kadar büyükse o kadar görünürdür: uzaklaştıkça figürler yakın yıldızlardan başlayarak çözülür, harita çizgi yumağına dönmez. Çizgiler yıldıza birkaç piksel kala biter (basılı haritalardaki gibi).
+
+**Gezegen dokuları** (`scripts/build-data/textures.ts`). NASA'nın modelleri haritalarını farklı düzenlerde saklar (kimi küp, kimi silindir). Betik düzeni tahmin etmek yerine her modelin kendi geometrisini okur: çıktı haritasının her pikseli için merkezden o yöne bir ışın gönderir, modelin hangi üçgenine çarptığını bulur ve dokuyu oradan örnekler. Sonuç her gezegen için aynı boylam × enlem haritasıdır.
+
 **Koordinat sistemi.** Veri dosyası HYG'nin ekvatoral Kartezyen koordinatlarını (J2000, parsek) saklar. Uygulama bunları yüklerken Galaktik çerçeveye döndürür: +X Galaksi merkezi, +Y kuzey Galaktik kutup. Samanyolu düzlemi sahnenin yatay düzlemidir.
 
 ### Dosya yapısı
 
 ```
-scripts/build-data/   index.ts (orkestrasyon) · fetch_hyg.ts · fetch_exoplanets.ts
+scripts/build-data/   index.ts (orkestrasyon) · fetch_hyg.ts · fetch_exoplanets.ts · constellations.ts
                       crossmatch.ts · habitable_zone.ts · stellar.ts · solar_system.ts · emit.ts
+                      textures.ts (ayrı komut: gezegen dokuları)
 scripts/e2e/          check.mjs — uçtan uca tarayıcı kontrolleri
-src/data/             schema.ts (veri sözleşmesi) · atlas.ts (çözme + türetme) · names.ts · labels.ts
+src/data/             schema.ts (veri sözleşmesi) · atlas.ts (çözme + türetme) · names.ts · labels.ts · solarBodies.ts
 src/store/            useAtlas.ts (zustand) · bootstrap.ts (yükleme, worker, URL hash)
-src/three/            Scene · StarField · HostMarkers · MilkyWay · CameraRig · Picker · Overlay
+src/three/            Scene · StarField · HostMarkers · MilkyWay · Constellations · CameraRig · Picker · Overlay
                       SystemView · systemLayout.ts · view.ts
 src/browser/          Browser · DataTable · Filters · columns · filterEngine.ts · filter.worker.ts
-src/panels/           DetailPanel · CompareWidget · Hud · Chrome (üst çubuk, yükleme, hakkında)
-src/lib/              astro.ts (koordinat, renk, Kepler) · format.ts · storage.ts
+src/panels/           DetailPanel · SkyPhoto · CompareWidget · Hud · Chrome (üst çubuk, yükleme, hakkında)
+src/lib/              astro.ts (koordinat, renk, Kepler) · hips.ts (HEALPix / gökyüzü karoları) · format.ts · storage.ts
 tests/                pipeline.test.ts · app.test.ts
 ```
 
@@ -116,7 +131,8 @@ tests/                pipeline.test.ts · app.test.ts
 3. **Çapraz eşleme** — sırasıyla Hipparcos no, HD no, Gliese adı, son olarak konum (öz hareket payıyla; uzaklık ya da parlaklık tutmalı). Kimlikle bulunan eşleşme gökyüzü konumuyla doğrulanır.
 4. HYG'de bulunmayan hostlar NASA'nın sağ açıklık / dik açıklık / uzaklık değerlerinden **sentetik yıldız** olarak eklenir.
 5. **Yaşanabilir bölge** — Kopparapu ve ark. (2013, 2014): `S_eff = S_eff☉ + aT + bT² + cT³ + dT⁴`, `d = √(L / S_eff)`. Muhafazakâr (kaçak sera – azami sera) ve iyimser (yakın-geçmiş Venüs – erken Mars) sınırlar. Işıtma için arşivin `st_lum` değeri kullanılır (dikkat: arşiv **log10(L/L☉)** yayımlar); yoksa yarıçap+sıcaklık, o da yoksa kütle–ışıtma bağıntısı.
-6. Kolon yönelimli ikili dosya + JSON üretir. HYG satırları görünür kadire göre sıralıdır; tablonun herhangi bir öneki bir kadir kesimidir (küçük cihazlarda yalnızca önek çizilir).
+6. **Takımyıldız çizgileri** — Stellarium'un 88 figürü Hipparcos numaralarıyla gelir; bunlar yıldız tablosunun satırlarına çevrilir (uzaklığı ölçülememiş 7 yıldızın çizgileri atlanır).
+7. Kolon yönelimli ikili dosya + JSON üretir. HYG satırları görünür kadire göre sıralıdır; tablonun herhangi bir öneki bir kadir kesimidir (küçük cihazlarda yalnızca önek çizilir).
 
 | | |
 |---|---:|
@@ -131,10 +147,12 @@ tests/                pipeline.test.ts · app.test.ts
 
 Ölçülen her şey panellerde ve tabloda yazar; tahminler `≈` ile işaretlidir.
 
+- **Fotoğraf:** yıldız panellerindeki gökyüzü görüntüsü (1980–90'larda çekilmiş fotoğraf plakaları; parlak yıldızlardaki hale ve haç teleskop optiğinin izidir, yıldızın kendisi bir noktadır) ve Güneş'in güncel görüntüsü. Güneş Sistemi'ndeki yüzeyler NASA'nın uzay aracı verilerinden derlediği haritalardır.
+- **Fotoğrafı olmayan:** ötegezegenler. Bugüne dek hiçbirinin yüzeyi görüntülenemedi; doğrudan görüntülenebilen birkaç düzinesi bile tek bir ışık noktasıdır. Bu yüzden küreleri temsilîdir ve uygulama bunu söyler. Aynı şekilde Güneş dışındaki yıldızların da yüzey görüntüsü yoktur; sistem görünümündeki yıldız küresi sıcaklığından renklendirilir.
 - **Gerçek:** yıldız konumları, uzaklıklar, kadirler, tayf tipleri; gezegenlerin yarıçap, kütle, periyot, yarı-büyük eksen, dış merkezlik ve denge sıcaklığı; HZ sınırları (model çıktısı).
 - **Ölçekli:** sistem görünümünde uzaklıklar `√a`; gezegen küreleri görünür olsun diye büyütülmüştür.
 - **Haritadaki minyatür sistemler:** halka sayısı, yörünge oranları (√ ölçek) ve — ölçülmüşse — düzlemin bakış doğrultumuza eğimi gerçek; mutlak boyut büyütülmüş (10 pc uzaktaki 1 AU'luk yörünge 0,1 yay saniyesidir, bir pikselin çok altında), hızlar sıkıştırılmış, düzlemin gökyüzündeki dönüş açısı veride olmadığından sabit sözde-rastgele.
-- **Temsili:** gezegen renkleri (yalnızca boyut sınıfını ve sıcaklığı kodlar), yörüngelerin yönelimi ve başlangıç fazı (veride yok; gezegen başına sabit sözde-rastgele), yörüngelerin eş düzlemli çizilmesi, Samanyolu bandı (prosedürel, ama doğru yönlendirilmiş).
+- **Temsili:** ötegezegen renkleri (yalnızca boyut sınıfını ve sıcaklığı kodlar), yörüngelerin yönelimi ve başlangıç fazı (veride yok; gezegen başına sabit sözde-rastgele), yörüngelerin eş düzlemli çizilmesi, Samanyolu bandı (prosedürel, ama doğru yönlendirilmiş).
 - **Yaklaşık:** sentetik yıldızların takımyıldızı, gökyüzündeki en yakın HYG yıldızından alınır (sınır çizgilerinin hemen yanında yanılabilir). V kadiri olmayan hostlarda mutlak kadir Gaia G kadirinden ya da ışıtmadan tahmin edilir.
 
 ## Veri kaynakları ve lisans
@@ -143,12 +161,18 @@ tests/                pipeline.test.ts · app.test.ts
 - **NASA Exoplanet Archive — Planetary Systems Composite Parameters** (DOI [10.26133/NEA13](https://doi.org/10.26133/NEA13)), <https://exoplanetarchive.ipac.caltech.edu/>. *Bu çalışma, NASA'nın Ötegezegen Keşif Programı kapsamında Ulusal Havacılık ve Uzay Dairesi ile yapılan sözleşme uyarınca California Teknoloji Enstitüsü tarafından işletilen NASA Exoplanet Archive'ı kullanmıştır.*
 - **Yaşanabilir bölge modeli** — Kopparapu ve ark. 2013, ApJ 765, 131; Kopparapu ve ark. 2014, ApJL 787, L29.
 - **Güneş Sistemi değerleri** — NASA Planetary Fact Sheet (kamu malı).
+- **Gezegen ve Güneş dokuları** (`public/textures/`) — NASA Science 3B modelleri (NASA Visualization Technology Applications and Development), <https://science.nasa.gov/3d-resources/>; Mars için NASA 3D Resources deposu. NASA içeriği genel olarak telif kapsamı dışındadır; kaynak gösterilerek kullanılır ve NASA'nın onayı anlamına gelmez.
+- **Yıldız fotoğrafları** — Digitized Sky Survey (DSS2). *The Digitized Sky Surveys were produced at the Space Telescope Science Institute under U.S. Government grant NAG W-2166, based on photographic data obtained using the Oschin Schmidt Telescope on Palomar Mountain and the UK Schmidt Telescope.* Renkli HiPS bileşimi CDS (Strasbourg) tarafından hazırlanmıştır ve NASA/IPAC Infrared Science Archive üzerinden sunulur; yedek tarama STScI/MAST arşivinden gelir. Görüntüler kopyalanmaz, çalışma zamanında kaynağından gösterilir.
+- **Güneş görüntüsü** — NASA Solar Dynamics Observatory (SDO), AIA ve HMI bilim ekipleri; <https://sdo.gsfc.nasa.gov/>.
+- **Takımyıldız çizgileri** — Stellarium "modern" gök kültürü, <https://github.com/Stellarium/stellarium/tree/master/skycultures/modern>. Lisans: **CC BY-SA 4.0**. `public/data/constellations.json` bunun türevidir ve aynı lisansla paylaşılır.
 - **Yazı tipleri** — Inter ve Space Grotesk (SIL Open Font License), `@fontsource` ile paketlenir.
 
-Görsel varlık kullanılmaz; gördüğünüz her şey veriden ve shader'lardan üretilir.
+Yukarıdaki fotoğraf ve dokular dışında görsel varlık kullanılmaz; geri kalan her şey veriden ve shader'lardan üretilir.
 
 ## Durum
 
 Plandaki Faz 0–5 tamam (iskele, veri hattı, 3B harita, veri tarayıcısı, sistem dalışı, favoriler + paylaşım + erişilebilirlik + mobil). Faz 7'den README ve ekran görüntüleri hazır.
 
-Sıradakiler (plandaki "stretch"): gözlemci modu ("bu gece benim konumumdan gökyüzü"), takımyıldız çizgileri, ışık eğrisi / veri seslendirme.
+Plan dışı eklenenler: gerçek görüntüler (yıldız fotoğrafları, Güneş, gezegen dokuları) ve "stretch" listesinden takımyıldız çizgileri.
+
+Sıradakiler: gözlemci modu ("bu gece benim konumumdan gökyüzü"), ışık eğrisi / veri seslendirme; ünlü ötegezegenler için NASA'nın sanatçı çizimleri ("illüstrasyon" etiketiyle).

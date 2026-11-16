@@ -6,7 +6,7 @@ import { useAtlas } from '../store/useAtlas'
 import { layoutSystem } from '../three/systemLayout'
 import { view } from '../three/view'
 import { cx, IconButton, Segmented } from '../ui/controls'
-import { GalaxyIcon, HomeIcon, PauseIcon, PlayIcon, TagIcon } from '../ui/icons'
+import { ConstellationIcon, GalaxyIcon, HomeIcon, PauseIcon, PlayIcon, TagIcon } from '../ui/icons'
 
 const FOV_TAN = Math.tan((50 * Math.PI) / 360)
 
@@ -60,6 +60,7 @@ function MapControls() {
   const unit = useAtlas((s) => s.unit)
   const showLabels = useAtlas((s) => s.showLabels)
   const showMilkyWay = useAtlas((s) => s.showMilkyWay)
+  const showConstellations = useAtlas((s) => s.showConstellations)
   const store = useAtlas.getState
   return (
     <>
@@ -69,6 +70,13 @@ function MapControls() {
       <Divider />
       <IconButton label={showLabels ? 'Etiketleri gizle' : 'Etiketleri göster'} active={showLabels} onClick={() => store().setPref('showLabels', !showLabels)}>
         <TagIcon size={16} />
+      </IconButton>
+      <IconButton
+        label={showConstellations ? 'Takımyıldız çizgilerini gizle' : 'Takımyıldız çizgilerini göster'}
+        active={showConstellations}
+        onClick={() => store().setPref('showConstellations', !showConstellations)}
+      >
+        <ConstellationIcon size={16} />
       </IconButton>
       <IconButton
         label={showMilkyWay ? 'Samanyolu bandını gizle' : 'Samanyolu bandını göster'}
@@ -105,6 +113,7 @@ function TimeControls({ atlas, systemIndex }: { atlas: Atlas; systemIndex: numbe
   const speed = useAtlas((s) => s.simSpeed)
   const paused = useAtlas((s) => s.simPaused)
   const showMilkyWay = useAtlas((s) => s.showMilkyWay)
+  const showConstellations = useAtlas((s) => s.showConstellations)
   const store = useAtlas.getState
 
   // Slider range: from a slow crawl of the innermost planet to a brisk lap of the outermost.
@@ -135,6 +144,13 @@ function TimeControls({ atlas, systemIndex }: { atlas: Atlas; systemIndex: numbe
       />
       <span className={cx('min-w-[104px] text-[12px] tabular-nums', paused ? 'text-faint' : 'text-muted')}>{paused ? 'duraklatıldı' : speedLabel(speed)}</span>
       <Divider />
+      <IconButton
+        label={showConstellations ? 'Takımyıldız çizgilerini gizle' : 'Takımyıldız çizgilerini göster'}
+        active={showConstellations}
+        onClick={() => store().setPref('showConstellations', !showConstellations)}
+      >
+        <ConstellationIcon size={16} />
+      </IconButton>
       <IconButton
         label={showMilkyWay ? 'Samanyolu bandını gizle' : 'Samanyolu bandını göster'}
         active={showMilkyWay}

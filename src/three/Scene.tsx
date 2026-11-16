@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import type { Atlas } from '../data/atlas'
 import { useAtlas } from '../store/useAtlas'
 import { CameraRig } from './CameraRig'
+import { Constellations } from './Constellations'
 import { HostMarkers } from './HostMarkers'
 import { MilkyWay } from './MilkyWay'
 import { Overlay } from './Overlay'
@@ -32,6 +33,7 @@ export function Scene({ atlas }: { atlas: Atlas }) {
   const showMilkyWay = useAtlas((s) => s.showMilkyWay)
   const filter = useFilterMask()
   const overlay = useRef<HTMLDivElement>(null)
+  const constellationNames = useRef<HTMLDivElement>(null)
 
   // Resolution is the cheapest quality dial there is: render at the display's own density but
   // never above 1.5 — a field of points gains nothing beyond that, and it is 44% fewer pixels
@@ -50,6 +52,7 @@ export function Scene({ atlas }: { atlas: Atlas }) {
       >
         <color attach="background" args={['#04050a']} />
         <MilkyWay visible={showMilkyWay} />
+        <Constellations atlas={atlas} container={constellationNames} />
         <StarField atlas={atlas} filter={filter} />
         <HostMarkers atlas={atlas} filter={filter} visible={mode === 'map'} />
         {mode === 'system' && systemIndex !== null && <SystemView atlas={atlas} systemIndex={systemIndex} />}
@@ -57,6 +60,7 @@ export function Scene({ atlas }: { atlas: Atlas }) {
         <Picker atlas={atlas} filter={filter} />
         <Overlay atlas={atlas} filter={filter} container={overlay} />
       </Canvas>
+      <div ref={constellationNames} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true" />
       <div ref={overlay} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true" />
     </div>
   )

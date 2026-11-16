@@ -1,10 +1,11 @@
 /**
  * Data contract shared by the build-time pipeline (scripts/build-data) and the app.
  *
- * Three files are emitted into public/data:
- *   stars.bin        column-oriented typed arrays (layout described by StarsMeta.columns)
- *   stars.meta.json  StarsMeta: layout, dictionaries and sparse name tables
- *   systems.json     SystemsFile: planetary systems and their planets
+ * Four files are emitted into public/data:
+ *   stars.bin            column-oriented typed arrays (layout described by StarsMeta.columns)
+ *   stars.meta.json      StarsMeta: layout, dictionaries and sparse name tables
+ *   systems.json         SystemsFile: planetary systems and their planets
+ *   constellations.json  ConstellationsFile: stick figures as rows of the star table
  */
 
 export const DATA_VERSION = 3
@@ -143,6 +144,20 @@ export interface SystemRecord {
   /** Stellar temperature was outside the model's 2600–7200 K range and got clamped. */
   hzExtrap?: true
   planets: PlanetRecord[]
+}
+
+/** One constellation's stick figure: polylines of star-table rows. */
+export interface ConstellationFigure {
+  /** IAU abbreviation, e.g. "Ori". */
+  abbr: string
+  lines: number[][]
+}
+
+/** public/data/constellations.json — optional layer, fetched on demand. */
+export interface ConstellationsFile {
+  version: number
+  source: { name: string; url: string; license: string }
+  figures: ConstellationFigure[]
 }
 
 export interface SystemsFile {

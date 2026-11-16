@@ -24,7 +24,7 @@ if (shotDir) mkdirSync(shotDir, { recursive: true })
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.svg': 'image/svg+xml', '.bin': 'application/octet-stream', '.woff2': 'font/woff2',
+  '.svg': 'image/svg+xml', '.bin': 'application/octet-stream', '.woff2': 'font/woff2', '.jpg': 'image/jpeg', '.png': 'image/png',
 }
 const server = createServer(async (request, response) => {
   try {
@@ -67,7 +67,10 @@ async function open(hash, viewport = { width: 1600, height: 900 }, mobile = fals
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  page.on('console', (message) => message.type() === 'error' && errors.push(message.text()))
+  // Photographs come from outside services (sky survey, solar observatory); their being
+  // unreachable is a state the app handles, not a defect, so those failures are not counted.
+  const external = (message) => message.text().startsWith('Failed to load resource') && !message.location().url.startsWith(origin)
+  page.on('console', (message) => message.type() === 'error' && !external(message) && errors.push(message.text()))
   await page.goto(origin + hash, { waitUntil: 'load' })
   await page.waitForSelector('.detail-panel', { timeout: 20000 })
   return { context, page, errors }
@@ -85,6 +88,15 @@ const firstRows = (page, count) =>
     count,
   )
 const shot = async (page, name) => shotDir && page.screenshot({ path: join(shotDir, `${name}.png`) })
+/** Wait until the panel's photograph has settled: 'tiles' or 'scan' (shown), 'ready' (Sun) or 'failed' (service unreachable). */
+const photo = async (page) => {
+  for (let i = 0; i < 40; i++) {
+    const status = await page.evaluate(() => document.querySelector('.detail-panel [data-photo]')?.getAttribute('data-photo') ?? null)
+    if (status !== 'loading') return status
+    await sleep(500)
+  }
+  return 'loading'
+}
 
 try {
   // ── Desktop, opened through a shared link.
@@ -93,6 +105,14 @@ try {
   check('paylaşılan bağlantı Sirius’u seçer', (await text(page, '.detail-panel h2')) === 'Sirius')
   check('seçili satır listede vurgulu', (await text(page, '[role=row][aria-selected=true] [role=gridcell]:nth-child(2)')) === 'Sirius')
   check('3B’de seçim halkası görünür', await page.evaluate(() => document.querySelector('.reticle--selected')?.style.opacity === '1'))
+  const siriusPhoto = await photo(page)
+  check(`yıldızın gökyüzü fotoğrafı sonuçlanır (${siriusPhoto})`, ['tiles', 'scan', 'failed'].includes(siriusPhoto))
+  check('takımyıldız adları görünür', await page.evaluate(() => [...document.querySelectorAll('.con-label')].some((el) => Number(el.style.opacity) > 0)))
+  await shot(page, 'yildiz')
+  await page.click('button[aria-label="Takımyıldız çizgilerini gizle"]')
+  await sleep(2000)
+  check('takımyıldız katmanı kapatılabilir', await page.evaluate(() => [...document.querySelectorAll('.con-label')].every((el) => !(Number(el.style.opacity) > 0))))
+  await page.click('button[aria-label="Takımyıldız çizgilerini göster"]')
 
   await page.click('[role=columnheader] button:has-text("Uzaklık")')
   await sleep(700)
@@ -166,6 +186,35 @@ try {
     await page.evaluate(() => (window.location.hash = '#planet-trappist-1-e'))
     await sleep(6000)
     await shot(page, 'sistem')
+    await page.evaluate(() => (window.location.hash = '#star-hyg0'))
+    await sleep(3000)
+    await photo(page)
+    await sleep(600)
+    await shot(page, 'gunes')
+  }
+
+  // ── The About dialog credits every source of imagery.
+  await page.click('button[aria-label="Galaktik Atlas hakkında"]')
+  await sleep(500)
+  const about = (await text(page, '[role=dialog]')) ?? ''
+  check('Hakkında penceresi görsel kaynaklarını anar', ['Digitized Sky Survey', 'Solar Dynamics Observatory', 'Stellarium'].every((name) => about.includes(name)))
+  await page.evaluate(() => document.querySelector('[role=dialog] .overflow-y-auto')?.scrollTo(0, 150))
+  await sleep(200)
+  await shot(page, 'hakkinda')
+  await page.keyboard.press('Escape')
+  await sleep(300)
+
+  // ── The Solar System is drawn with real maps.
+  const maps = []
+  page.on('response', (response) => response.url().includes('/textures/') && maps.push(response.status()))
+  await page.evaluate(() => (window.location.hash = '#system-gunes-sistemi'))
+  await sleep(6500)
+  check('Güneş Sistemi açılır', (await text(page, '.detail-panel h2')) === 'Güneş Sistemi')
+  check('gerçek yüzey haritaları yüklenir', maps.length >= 10 && maps.every((status) => status === 200), `${maps.length} doku`)
+  check('Güneş Sistemi’nde konsol hatası yok', errors.length === 0, errors.slice(0, 2).join(' / '))
+  if (shotDir) {
+    await page.click('button[aria-label="Duraklat"]')
+    await shot(page, 'gunes-sistemi')
   }
   await page.evaluate(() => window.localStorage.clear())
   await context.close()
