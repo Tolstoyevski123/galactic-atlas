@@ -1,0 +1,444 @@
+@import 'tailwindcss';
+
+/* ── Design tokens ─────────────────────────────────────────────────────────
+   One dark, quiet surface language. Colour carries meaning and nothing else:
+   gold = hosts exoplanets, green = habitable zone, blue = what you selected. */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+
+  --color-space: #04050a;
+  --color-panel: #0b0e18;
+  --color-raised: #121727;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.14);
+  --color-ink: #e9edf5;
+  --color-muted: #9aa3b8;
+  --color-faint: #687188;
+  --color-gold: #f6c453;
+  --color-hz: #4ade80;
+  --color-accent: #7cc7ff;
+  --color-danger: #f87171;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-rise: rise 0.45s var(--ease-out-soft) both;
+  --animate-fade: fade 0.35s ease-out both;
+  --animate-slide-right: slide-right 0.42s var(--ease-out-soft) both;
+  --animate-slide-left: slide-left 0.42s var(--ease-out-soft) both;
+  --animate-orbit: orbit 3.2s linear infinite;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-right {
+    from { opacity: 0; transform: translateX(-14px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes slide-left {
+    from { opacity: 0; transform: translateX(18px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes orbit {
+    to { transform: rotate(360deg); }
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--color-space);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    font-feature-settings: 'cv11', 'ss03';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas {
+    display: block;
+    touch-action: none;
+    outline: none;
+  }
+  button,
+  input,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+  ::selection {
+    background: rgb(124 199 255 / 0.32);
+  }
+  :focus-visible {
+    outline: 2px solid rgb(124 199 255 / 0.85);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* Number inputs without spinners: the fields are tiny and the arrows only add noise. */
+  input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.14);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(255 255 255 / 0.26);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* Floating panel: softly lit from the top edge. Deliberately NOT a backdrop blur — blurring
+     a WebGL canvas that repaints 60 times a second behind three panels is the single most
+     expensive thing a page like this can ask of the compositor. */
+  .glass {
+    background: linear-gradient(180deg, rgb(17 22 37 / 0.95), rgb(9 12 21 / 0.97));
+    border: 1px solid var(--color-line);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 24px 60px -24px rgb(0 0 0 / 0.85),
+      0 2px 10px rgb(0 0 0 / 0.3);
+  }
+  .eyebrow {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-faint);
+  }
+
+  /* ── Labels drawn over the canvas (created imperatively, see three/Overlay.tsx) ── */
+  .star-label {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: -8px 0 0 11px;
+    font: 500 11px/16px var(--font-sans);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    color: rgb(226 232 245 / 0.72);
+    text-shadow: 0 0 6px rgb(0 0 0 / 0.95), 0 0 2px rgb(0 0 0 / 0.9);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    will-change: transform, opacity;
+  }
+  .star-label--host {
+    color: rgb(246 207 115 / 0.92);
+  }
+  .star-label--sol {
+    color: #a5deff;
+    font-weight: 600;
+  }
+  .star-label--selected {
+    margin: -9px 0 0 22px;
+    color: #fff;
+    font: 600 12.5px/18px var(--font-display);
+    letter-spacing: 0.01em;
+  }
+
+  .reticle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 9999px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    will-change: transform, opacity;
+  }
+  /* --size is set from the render loop so the ring wraps a host's whole miniature system. */
+  .reticle--selected {
+    width: var(--size, 34px);
+    height: var(--size, 34px);
+    margin: calc(var(--size, 34px) / -2) 0 0 calc(var(--size, 34px) / -2);
+    color: var(--color-accent);
+    border: 1.5px solid currentColor;
+    box-shadow: 0 0 14px rgb(124 199 255 / 0.35), inset 0 0 10px rgb(124 199 255 / 0.18);
+  }
+  .reticle--selected.reticle--host {
+    color: var(--color-gold);
+    box-shadow: 0 0 14px rgb(246 196 83 / 0.4), inset 0 0 10px rgb(246 196 83 / 0.2);
+  }
+  .reticle--selected::after {
+    content: '';
+    position: absolute;
+    inset: -1.5px;
+    border-radius: inherit;
+    border: 1px solid currentColor;
+    animation: reticle-ping 2.4s var(--ease-out-soft) infinite;
+  }
+  /* A guaranteed-visible dot in the star's own colour, for stars too faint to draw. */
+  .reticle--selected > i {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 9999px;
+    background: var(--star, #fff);
+    box-shadow: 0 0 9px 2px var(--star, #fff);
+  }
+  .reticle--hover {
+    width: var(--size, 26px);
+    height: var(--size, 26px);
+    margin: calc(var(--size, 26px) / -2) 0 0 calc(var(--size, 26px) / -2);
+    border: 1px solid rgb(255 255 255 / 0.6);
+  }
+  /* A host already shows its star; the reticle's stand-in dot would only cover it. */
+  .reticle--host > i {
+    display: none;
+  }
+  @keyframes reticle-ping {
+    0% { transform: scale(1); opacity: 0.7; }
+    70%, 100% { transform: scale(1.9); opacity: 0; }
+  }
+
+  .star-tip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    margin: 16px 0 0 16px;
+    padding: 5px 10px;
+    border-radius: 9px;
+    background: rgb(9 12 21 / 0.92);
+    border: 1px solid var(--color-line-strong);
+    box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.8);
+    font: 500 12px/16px var(--font-sans);
+    white-space: nowrap;
+    color: var(--color-ink);
+    opacity: 0;
+    transition: opacity 0.14s ease;
+    will-change: transform, opacity;
+  }
+  .star-tip--host {
+    border-color: rgb(246 196 83 / 0.45);
+  }
+
+  /* ── Labels inside the system view (drei <Html>) ── */
+  .planet-label {
+    padding: 1px 7px;
+    border-radius: 9999px;
+    background: rgb(9 12 21 / 0.72);
+    border: 1px solid var(--color-line-strong);
+    font: 600 11px/16px var(--font-display);
+    white-space: nowrap;
+    color: rgb(226 232 245 / 0.9);
+    user-select: none;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, opacity 0.25s ease;
+  }
+  .planet-label--hz {
+    border-color: rgb(74 222 128 / 0.55);
+    color: #bbf7d0;
+  }
+  .planet-label--active {
+    background: rgb(233 237 245 / 0.96);
+    border-color: transparent;
+    color: #0b0e18;
+  }
+  .zone-label,
+  .ring-label {
+    font: 500 10.5px/14px var(--font-sans);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    user-select: none;
+    text-shadow: 0 0 6px rgb(0 0 0 / 0.9);
+    transition: opacity 0.25s ease;
+  }
+  .zone-label {
+    color: rgb(134 239 172 / 0.9);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    font-size: 9.5px;
+  }
+  .ring-label {
+    color: rgb(154 163 184 / 0.7);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* ── Panel placement ── */
+  .detail-panel {
+    left: 12px;
+    top: 76px;
+    width: min(364px, calc(100vw - 24px));
+    max-height: calc(100dvh - 76px - 104px);
+  }
+  /* Below the desktop layout the browser covers the map, so it must not be see-through. */
+  @media (max-width: 1099px) {
+    aside.glass {
+      background: linear-gradient(180deg, #111625, #090c15);
+    }
+  }
+  @media (max-width: 640px) {
+    .detail-panel {
+      top: auto;
+      bottom: 68px;
+      left: 8px;
+      right: 8px;
+      width: auto;
+      max-height: 38dvh;
+    }
+    .hud {
+      left: 8px;
+      bottom: 8px;
+    }
+  }
+
+  /* ── Tooltips for icon buttons: [data-tip] + .tip ── */
+  .tip {
+    position: relative;
+  }
+  .tip[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    z-index: 70;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translate(-50%, 3px);
+    padding: 4px 8px;
+    border-radius: 7px;
+    background: #05070d;
+    border: 1px solid var(--color-line-strong);
+    box-shadow: 0 8px 20px -6px rgb(0 0 0 / 0.8);
+    font: 500 11.5px/15px var(--font-sans);
+    letter-spacing: 0;
+    white-space: nowrap;
+    color: var(--color-ink);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+  }
+  .tip[data-tip-pos='bottom']::after {
+    bottom: auto;
+    top: calc(100% + 8px);
+    transform: translate(-50%, -3px);
+  }
+  .tip[data-tip]:hover::after,
+  .tip[data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition-delay: 0.35s;
+  }
+  /* Keep tooltips of buttons hugging the screen edge on screen. */
+  .hud .tip[data-tip]:first-child::after {
+    left: 0;
+    transform: translate(0, 3px);
+  }
+  .hud .tip[data-tip]:first-child:hover::after,
+  .hud .tip[data-tip]:first-child:focus-visible::after {
+    transform: translate(0, 0);
+  }
+  .detail-panel .tip[data-tip]:last-child::after,
+  aside .tip[data-tip]::after {
+    left: auto;
+    right: 0;
+    transform: translate(0, -3px);
+  }
+  .detail-panel .tip[data-tip]:last-child:hover::after,
+  aside .tip[data-tip]:hover::after,
+  aside .tip[data-tip]:focus-visible::after {
+    transform: translate(0, 0);
+  }
+  @media (hover: none) {
+    .tip[data-tip]::after {
+      display: none;
+    }
+  }
+
+  /* ── Time-speed slider ── */
+  .speed-slider {
+    appearance: none;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .speed-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--color-accent) var(--fill, 50%), rgb(255 255 255 / 0.14) var(--fill, 50%));
+  }
+  .speed-slider::-moz-range-track {
+    height: 4px;
+    border-radius: 4px;
+    background: rgb(255 255 255 / 0.14);
+  }
+  .speed-slider::-moz-range-progress {
+    height: 4px;
+    border-radius: 4px;
+    background: var(--color-accent);
+  }
+  .speed-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgb(124 199 255 / 0.25), 0 2px 6px rgb(0 0 0 / 0.5);
+    transition: box-shadow 0.15s ease;
+  }
+  .speed-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgb(124 199 255 / 0.25), 0 2px 6px rgb(0 0 0 / 0.5);
+  }
+  .speed-slider:hover::-webkit-slider-thumb {
+    box-shadow: 0 0 0 5px rgb(124 199 255 / 0.3), 0 2px 6px rgb(0 0 0 / 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
