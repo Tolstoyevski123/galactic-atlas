@@ -122,15 +122,30 @@ describe('HYG parsing', () => {
     expect(normalizeGliese('HD 1234')).toBe('')
   })
 
+  const header = 'id,hip,hd,hr,gl,bf,proper,ra,dec,dist,pmra,pmdec,rv,mag,absmag,spect,ci,x,y,z,vx,vy,vz,bayer,flam,con'
+  const sirius =
+    '32263,32349,48915,2491,Gl 244A,9Alp CMa,Sirius,6.752481,-16.716116,2.6371,-546.01,-1223.08,-9.4,-1.44,1.454,A0m...,0.009,-0.494323,2.476731,-0.758485,0.00000953,-0.00001207,-0.00001221,Alp,9,CMa'
+
   it('reads the columns it needs and converts right ascension to degrees', () => {
-    const header = 'id,hip,hd,hr,gl,bf,proper,ra,dec,dist,pmra,pmdec,rv,mag,absmag,spect,ci,x,y,z,bayer,flam,con'
-    const row = '32263,32349,48915,2491,Gl 244A,9Alp CMa,Sirius,6.752481,-16.716116,2.6371,-546.01,-1223.08,-9.4,-1.44,1.454,A0m...,0.009,-0.494323,2.476731,-0.758485,Alp,9,CMa'
-    const [star] = parseHyg(`${header}\n${row}\n`)
+    const [star] = parseHyg(`${header}\n${sirius}\n`)
     expect(star.proper).toBe('Sirius')
     expect(star.hip).toBe(32349)
     expect(star.gl).toBe('GJ 244 A')
     expect(star.raDeg).toBeCloseTo(101.287, 2)
     expect(star.pm).toBeCloseTo(Math.hypot(546.01, 1223.08), 3)
+  })
+
+  it('reads space velocities in parsec per year and treats blanks as "not moving"', () => {
+    const blank = '5,,,,,,,1.0,2.0,50,,,,9.1,5.6,,,-1,2,3,,,,,,Psc'
+    const [star, still] = parseHyg(`${header}\n${sirius}\n${blank}\n`)
+    expect([star.vx, star.vy, star.vz]).toEqual([0.00000953, -0.00001207, -0.00001221])
+    // 1 pc/yr is 977,792 km/s: Sirius moves at about 19 km/s relative to the Sun.
+    expect(Math.hypot(star.vx, star.vy, star.vz) * 977792).toBeCloseTo(19.3, 0)
+    expect([still.vx, still.vy, still.vz]).toEqual([0, 0, 0])
+  })
+
+  it('refuses a file without the velocity columns', () => {
+    expect(() => parseHyg(`${header.replace(',vx,vy,vz', '')}\n`)).toThrow(/vx/)
   })
 })
 

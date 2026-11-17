@@ -5,12 +5,13 @@ import type { Atlas } from '../data/atlas'
 import { starColor } from '../lib/astro'
 import { isCompactDevice } from '../lib/motion'
 import type { FilterMask } from './useFilterMask'
-import { STAR_BRIGHTNESS_GLSL, view } from './view'
+import { originExclusion, STAR_BRIGHTNESS_GLSL, view } from './view'
 
 const vertexShader = /* glsl */ `
   attribute float aAbsMag;
   attribute vec3 aColor;
   attribute float aFade;
+  attribute vec3 aVel;
 
   uniform float uPixelRatio;
   uniform float uRefDist;
@@ -19,6 +20,8 @@ const vertexShader = /* glsl */ `
   uniform float uFilterMix;
   uniform float uSky;
   uniform vec3 uOrigin;
+  uniform float uHide;
+  uniform float uEpoch;
 
   varying vec3 vColor;
   varying float vAlpha;
@@ -26,22 +29,24 @@ const vertexShader = /* glsl */ `
   ${STAR_BRIGHTNESS_GLSL}
 
   void main() {
+    // The time machine: every star keeps its present velocity (CPU twin: starPositionAt in data/atlas.ts).
+    vec3 p = position + aVel * uEpoch;
     float dist;
     vec4 mv;
     if (uSky > 0.5) {
-      // Inside a system: draw each star as a direction on the sky of the host star.
-      vec3 rel = position - uOrigin;
+      // Standing at a star (or inside its system): draw each star as a direction on that star's sky.
+      vec3 rel = p - uOrigin;
       dist = length(rel);
       mv = vec4(mat3(viewMatrix) * (rel / max(dist, 1e-6)), 1.0);
     } else {
-      mv = modelViewMatrix * vec4(position, 1.0);
+      mv = modelViewMatrix * vec4(p, 1.0);
       dist = length(mv.xyz);
     }
 
     float m = effectiveMagnitude(aAbsMag, dist);
     float alpha = starAlpha(m) * uDim * mix(1.0, mix(0.045, 1.0, aFade), uFilterMix);
-    // The host itself is drawn by the system view, not as a background star.
-    if (uSky > 0.5 && dist < 1e-3) alpha = 0.0;
+    // The star we are standing at is not part of its own sky (inside a system, the system view draws it).
+    if (uSky > 0.5 && dist < uHide) alpha = 0.0;
 
     vColor = aColor;
     vAlpha = alpha;
@@ -88,6 +93,8 @@ export function StarField({ atlas, filter }: Props) {
           uFilterMix: { value: 0 },
           uSky: { value: 0 },
           uOrigin: { value: new THREE.Vector3() },
+          uHide: { value: 1e-3 },
+          uEpoch: { value: 0 },
         },
         transparent: true,
         blending: THREE.AdditiveBlending,
@@ -113,6 +120,7 @@ export function StarField({ atlas, filter }: Props) {
     g.setAttribute('aAbsMag', new THREE.BufferAttribute(atlas.absmag, 1))
     g.setAttribute('aColor', new THREE.BufferAttribute(colors, 3, true))
     g.setAttribute('aFade', fade)
+    g.setAttribute('aVel', new THREE.BufferAttribute(atlas.vel, 3))
     // Rows are sorted brightest-first, so drawing a prefix is a clean magnitude cut for small devices.
     if (isCompactDevice()) g.setDrawRange(0, Math.min(n, 60000))
     return g
@@ -140,6 +148,8 @@ export function StarField({ atlas, filter }: Props) {
     u.uFilterMix.value = filterMix.current
     u.uSky.value = view.sky ? 1 : 0
     ;(u.uOrigin.value as THREE.Vector3).copy(view.origin)
+    u.uHide.value = originExclusion()
+    u.uEpoch.value = view.epoch
   })
 
   return <points geometry={geometry} material={material} frustumCulled={false} renderOrder={-10} />

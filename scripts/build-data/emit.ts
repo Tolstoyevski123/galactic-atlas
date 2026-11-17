@@ -15,6 +15,8 @@ export interface StarRow {
   x: number
   y: number
   z: number
+  /** Velocity relative to the Sun, parsec per year, same axes as x/y/z; zeros when unknown. */
+  vel: [number, number, number]
   mag: number
   absmag: number
   ci: number
@@ -36,6 +38,7 @@ const BYTES: Record<ColumnType, number> = { f32: 4, i32: 4, u16: 2, u8: 1 }
 // Widest types first so every column starts on a suitably aligned offset.
 const LAYOUT: Array<{ name: StarColumnName; type: ColumnType; components: number }> = [
   { name: 'pos', type: 'f32', components: 3 },
+  { name: 'vel', type: 'f32', components: 3 },
   { name: 'mag', type: 'f32', components: 1 },
   { name: 'absmag', type: 'f32', components: 1 },
   { name: 'ci', type: 'f32', components: 1 },
@@ -77,6 +80,7 @@ export function packStars(rows: readonly StarRow[]): PackedStars {
   }
 
   const pos = view('pos', 'f32')
+  const vel = view('vel', 'f32')
   const mag = view('mag', 'f32')
   const absmag = view('absmag', 'f32')
   const ci = view('ci', 'f32')
@@ -105,6 +109,9 @@ export function packStars(rows: readonly StarRow[]): PackedStars {
     pos[i * 3] = r.x
     pos[i * 3 + 1] = r.y
     pos[i * 3 + 2] = r.z
+    vel[i * 3] = r.vel[0]
+    vel[i * 3 + 1] = r.vel[1]
+    vel[i * 3 + 2] = r.vel[2]
     mag[i] = r.mag
     absmag[i] = r.absmag
     ci[i] = r.ci

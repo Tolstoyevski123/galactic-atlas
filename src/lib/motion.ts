@@ -1,6 +1,10 @@
-/** True when the viewer asked the system for less motion. */
+let reducedMotion: MediaQueryList | null | undefined
+
+/** True when the viewer asked the system for less motion. Cheap enough to ask every frame. */
 export function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+  if (typeof window === 'undefined') return false
+  if (reducedMotion === undefined) reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null
+  return reducedMotion?.matches === true
 }
 
 /** Coarse pointer and a small screen: treat as a phone/tablet and lighten the scene. */

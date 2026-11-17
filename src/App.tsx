@@ -48,6 +48,7 @@ function useShortcuts(): void {
       if (event.key === 'Escape') {
         if (s.aboutOpen) s.setUi({ aboutOpen: false })
         else if (typing) return
+        else if (s.mode === 'sky') s.exitSky()
         else if (s.mode === 'system') {
           if (s.selectedPlanet !== null) s.selectPlanet(null)
           else s.exitSystem()

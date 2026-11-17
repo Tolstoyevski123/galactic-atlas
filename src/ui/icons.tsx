@@ -59,7 +59,15 @@ export const TableIcon = icon(<><rect x="3.5" y="4.5" width="17" height="15" rx=
 export const ResetIcon = icon(<><path d="M4 12a8 8 0 1 0 2.6-5.9" /><path d="M4 4.5v4.2h4.2" /></>)
 export const CheckIcon = icon(<path d="m5 12.5 4.5 4.5L19 7.5" />)
 export const SunIcon = icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></>)
-export const LeafIcon = icon(<><path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14" /><path d="M5 19c2-4 5-7 9-9" /></>)
+/** An hourglass: the time machine. */
+export const HourglassIcon = icon(<><path d="M6.5 3.5h11M6.5 20.5h11" /><path d="M7.5 3.5c0 4.5 4.5 5.5 4.5 8.5s-4.5 4-4.5 8.5M16.5 3.5c0 4.5-4.5 5.5-4.5 8.5s4.5 4 4.5 8.5" /></>)
+/** A telescope: the discovery timeline. */
+export const TelescopeIcon = icon(<><path d="m4 13.5 13-6.5 1.8 3.6-13 6.5z" /><path d="m17 7 2.6-1.3 1.8 3.6-2.6 1.3" /><path d="M11 14.5 8.5 21M12.4 13.8 15 21" /></>)
+/** Looking up from a horizon: the sky seen from a star. */
+export const SkyIcon = icon(<><path d="M3 18.5h18" /><path d="M5.5 18.5a6.5 6.5 0 0 1 13 0" /><path d="M8 7.5l.6 1.4 1.4.6-1.4.6L8 11.5l-.6-1.4L6 9.5l1.4-.6zM16.5 4l.4 1 1 .4-1 .4-.4 1-.4-1-1-.4 1-.4z" /></>)
+export const BackwardIcon = icon(<path d="M11 6.5v11L3.5 12zM20 6.5v11L12.5 12z" />, true)
+export const ForwardIcon = icon(<path d="M13 6.5v11l7.5-5.5zM4 6.5v11l7.5-5.5z" />, true)
+export const LeafIcon =icon(<><path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14" /><path d="M5 19c2-4 5-7 9-9" /></>)
 
 /** The app mark: a star, an orbit, and one green world. */
 export function Logo({ size = 28 }: { size?: number }) {

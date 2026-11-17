@@ -30,9 +30,14 @@ export interface Atlas {
   hygCount: number
   /** Equatorial xyz as stored in the file (parsec). */
   posEq: Float32Array
-  /** Scene-frame xyz (see equatorialToScene). */
+  /** Scene-frame xyz (see equatorialToScene): where the star is today. */
   pos: Float32Array
-  /** Distance from the Sun, parsec. */
+  /**
+   * Scene-frame velocity relative to the Sun, parsec per year; zero where it is unknown
+   * (FLAG_NO_VEL). Read positions at another date through starPositionAt().
+   */
+  vel: Float32Array
+  /** Distance from the Sun today, parsec. */
   dist: Float32Array
   mag: Float32Array
   absmag: Float32Array
@@ -97,6 +102,8 @@ export function decodeAtlas(bin: ArrayBuffer, meta: StarsMeta, file: SystemsFile
   const n = meta.count
   const posEq = column(bin, meta.columns, n, 'pos') as Float32Array
   const pos = equatorialToScene(posEq)
+  // A rotation is linear, so it carries velocities into the scene frame exactly as it does positions.
+  const vel = equatorialToScene(column(bin, meta.columns, n, 'vel') as Float32Array)
   const dist = new Float32Array(n)
   for (let i = 0; i < n; i++) dist[i] = Math.hypot(posEq[3 * i], posEq[3 * i + 1], posEq[3 * i + 2])
 
@@ -156,6 +163,7 @@ export function decodeAtlas(bin: ArrayBuffer, meta: StarsMeta, file: SystemsFile
     hygCount: meta.hygCount,
     posEq,
     pos,
+    vel,
     dist,
     mag: column(bin, meta.columns, n, 'mag') as Float32Array,
     absmag: column(bin, meta.columns, n, 'absmag') as Float32Array,
@@ -184,6 +192,34 @@ export function decodeAtlas(bin: ArrayBuffer, meta: StarsMeta, file: SystemsFile
     hosts: Int32Array.from(hostList),
     solSystem,
   }
+}
+
+export interface Vec3Like {
+  x: number
+  y: number
+  z: number
+}
+
+/**
+ * Scene position of star `i`, `years` from today (negative = the past), assuming it keeps its
+ * present velocity. This is the one place the time machine's motion is defined on the CPU; the
+ * shaders compute the same `position + velocity · years`, so what is drawn, labelled and picked
+ * always agrees.
+ */
+export function starPositionAt<T extends Vec3Like>(atlas: Atlas, i: number, years: number, out: T): T {
+  const k = i * 3
+  const pos = atlas.pos
+  const vel = atlas.vel
+  out.x = pos[k] + vel[k] * years
+  out.y = pos[k + 1] + vel[k + 1] * years
+  out.z = pos[k + 2] + vel[k + 2] * years
+  return out
+}
+
+/** Distance of star `i` from the Sun, parsec, `years` from today. */
+export function starDistanceAt(atlas: Atlas, i: number, years: number): number {
+  const k = i * 3
+  return Math.hypot(atlas.pos[k] + atlas.vel[k] * years, atlas.pos[k + 1] + atlas.vel[k + 1] * years, atlas.pos[k + 2] + atlas.vel[k + 2] * years)
 }
 
 /** Every designation of a star, primary name first, without duplicates. */

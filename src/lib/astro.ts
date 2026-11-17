@@ -5,6 +5,8 @@ export const AU_PER_PC = 206264.806
 /** Solar radius in AU. */
 export const R_SUN_AU = 0.00465047
 export const TEFF_SUN = 5772
+/** One parsec per (Julian) year, in km/s: the catalogue stores velocities in pc/yr. */
+export const KMS_PER_PC_YR = 977792.2
 
 export const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v)
 
@@ -37,6 +39,46 @@ export function equatorialToScene(src: Float32Array, out: Float32Array = new Flo
     out[i + 2] = -gy
   }
   return out
+}
+
+export interface Motion {
+  /** Speed relative to the Sun, km/s. */
+  speed: number
+  /** Component along the line of sight, km/s: positive = receding. */
+  radial: number
+  /**
+   * False when the catalogue has no radial velocity for the star: only its drift across the sky is
+   * known then, so how its distance changes — and when it passes closest — cannot be told.
+   */
+  radialKnown: boolean
+  /** Closest approach to the Sun on a straight line: years from today (negative = already past). */
+  closestYears: number
+  /** Distance at that moment, parsec. */
+  closestDistance: number
+}
+
+/**
+ * What a position (parsec) and velocity (parsec per year), both relative to the Sun, say about a
+ * star's motion. Straight-line motion: good for about ±100,000 years, a rough guide beyond that.
+ * Returns null for a star that is not moving (velocity unknown) or sits at the origin.
+ */
+export function stellarMotion(px: number, py: number, pz: number, vx: number, vy: number, vz: number): Motion | null {
+  const v2 = vx * vx + vy * vy + vz * vz
+  const r = Math.hypot(px, py, pz)
+  if (!(v2 > 0) || !(r > 0)) return null
+  const along = px * vx + py * vy + pz * vz
+  const radial = (along / r) * KMS_PER_PC_YR
+  // The distance is smallest where the velocity is perpendicular to the position: t* = −(p·v)/|v|².
+  const closestYears = -along / v2
+  return {
+    speed: Math.sqrt(v2) * KMS_PER_PC_YR,
+    radial,
+    // HYG writes 0 for an unmeasured radial velocity and rounds velocities to 1e-8 pc/yr (0.01 km/s),
+    // so a line-of-sight component this close to nothing means "not measured", not "exactly zero".
+    radialKnown: Math.abs(radial) > 0.05,
+    closestYears,
+    closestDistance: Math.hypot(px + vx * closestYears, py + vy * closestYears, pz + vz * closestYears),
+  }
 }
 
 /** Right ascension (hours, 0..24) and declination (degrees) of an equatorial vector. */

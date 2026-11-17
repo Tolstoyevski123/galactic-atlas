@@ -8,7 +8,7 @@
  *   constellations.json  ConstellationsFile: stick figures as rows of the star table
  */
 
-export const DATA_VERSION = 3
+export const DATA_VERSION = 4
 
 /** Spectral class codes stored in the `spectClass` column. 0..6 = O B A F G K M. */
 export const SPECTRAL_CLASSES = ['O', 'B', 'A', 'F', 'G', 'K', 'M'] as const
@@ -21,13 +21,14 @@ export const FLAG_SYNTHETIC = 1 // not in HYG; placed from NASA ra/dec/distance
 export const FLAG_HOST = 2 // has at least one confirmed planet
 export const FLAG_ABSMAG_EST = 4 // absolute magnitude is an estimate (no V magnitude published)
 export const FLAG_DIST_NASA = 8 // HYG had no usable parallax; distance taken from NASA
+export const FLAG_NO_VEL = 16 // space velocity unknown: `vel` is zero and the star never moves in the time machine
 
 export type ColumnType = 'f32' | 'i32' | 'u16' | 'u8'
 
 export interface ColumnSpec {
   name: StarColumnName
   type: ColumnType
-  /** Values per star (3 for `pos`, otherwise 1). */
+  /** Values per star (3 for `pos` and `vel`, otherwise 1). */
   components: number
   /** Byte offset into stars.bin. */
   offset: number
@@ -35,6 +36,7 @@ export interface ColumnSpec {
 
 export type StarColumnName =
   | 'pos' // equatorial J2000 Cartesian, parsec: +X vernal equinox, +Y RA 6h, +Z north celestial pole
+  | 'vel' // velocity relative to the Sun, parsec per year, same axes as `pos` (zero when unknown: FLAG_NO_VEL)
   | 'mag' // apparent V magnitude (NaN when unknown)
   | 'absmag' // absolute V magnitude (always finite; see FLAG_ABSMAG_EST)
   | 'ci' // B−V colour index (NaN when unknown)

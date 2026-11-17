@@ -193,6 +193,63 @@ try {
     await shot(page, 'gunes')
   }
 
+  // ── Time machine.
+  await page.fill('input[type=search]', '')
+  await page.evaluate(() => (window.location.hash = '#star-32349'))
+  await sleep(3500)
+  await page.click('button[aria-label="Zaman makinesi"]')
+  await sleep(400)
+  const timeStrip = 'section[aria-label="Zaman makinesi"]'
+  check('zaman makinesi açılır', (await page.$(`${timeStrip} input[type=range]`)) !== null)
+  await page.click(`${timeStrip} button:has-text("+100 bin")`)
+  await sleep(1200)
+  check('tarih 100.000 yıl ileri alınır', (await page.getAttribute(`${timeStrip} [data-epoch]`, 'data-epoch')) === '100000')
+  check('panel o tarihteki uzaklığı gösterir', (await page.$('.detail-panel dt:has-text("yılında")')) !== null)
+  check('kamera seçili yıldızı izler', await page.evaluate(() => document.querySelector('.reticle--selected')?.style.opacity === '1'))
+  await shot(page, 'zaman-makinesi')
+  await page.click(`${timeStrip} button:has-text("Bugün")`)
+  await sleep(400)
+  check('"Bugün" tarihi sıfırlar', (await page.getAttribute(`${timeStrip} [data-epoch]`, 'data-epoch')) === '0')
+  await page.click('button[aria-label="Zaman makinesini kapat"]')
+  await sleep(300)
+
+  // ── The sky seen from a star.
+  await page.click('.detail-panel button:has-text("Buradan gökyüzü")')
+  await sleep(1600)
+  check('gökyüzü bağlantısı adres çubuğunda', (await hash(page)) === '#sky-star-32349', await hash(page))
+  check('Güneş’in buradan kadiri yazılı', (await page.$('.detail-panel [data-sun-mag]')) !== null)
+  check('gökyüzünde Güneş etiketi görünür', await page.evaluate(() => [...document.querySelectorAll('.star-label--sol')].some((el) => el.style.opacity === '1')))
+  await shot(page, 'gokyuzu')
+  await page.keyboard.press('Escape')
+  await sleep(1600)
+  check('Esc gökyüzünden haritaya döner', (await hash(page)) === '#star-32349' && (await page.$('.detail-panel button:has-text("Buradan gökyüzü")')) !== null)
+
+  // ── Discovery timeline.
+  const setRange = (selector, value) =>
+    page.evaluate(([s, v]) => {
+      const el = document.querySelector(s)
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(v))
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }, [selector, value])
+  await page.keyboard.press('h')
+  await sleep(3600)
+  await page.click('button[aria-label="Keşif tarihi"]')
+  await sleep(500)
+  const discoveryStrip = 'section[aria-label="Keşif tarihi"]'
+  const latest = Number(await page.getAttribute(`${discoveryStrip} [data-discovery-year]`, 'data-discovery-year'))
+  check('keşif şeridi son yılla açılır', latest >= 2024, String(latest))
+  await shot(page, 'kesif-bugun')
+  await setRange(`${discoveryStrip} input[aria-label="Yıl"]`, 1995)
+  await sleep(1200)
+  const status1995 = (await text(page, `${discoveryStrip} [data-discovery-year]`)) ?? ''
+  check('yıl 1995’e çekilebilir', status1995.startsWith('1995'), status1995)
+  const hostLabels = await page.evaluate(() => [...document.querySelectorAll('.star-label--host')].filter((el) => el.style.opacity === '1').length)
+  check('1995’te haritada yalnız birkaç gezegenli yıldız kalır', hostLabels <= 6, String(hostLabels))
+  await shot(page, 'kesif-1995')
+  await page.click('button[aria-label="Keşif tarihini kapat"]')
+  await sleep(300)
+  check('zaman çizelgelerinden sonra konsol hatası yok', errors.length === 0, errors.slice(0, 2).join(' / '))
+
   // ── The About dialog credits every source of imagery.
   await page.click('button[aria-label="Galaktik Atlas hakkında"]')
   await sleep(500)
@@ -226,6 +283,12 @@ try {
   check('telefonda yatay taşma yok', await phone.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
   check('telefonda konsol hatası yok', phone.errors.length === 0, phone.errors.slice(0, 2).join(' / '))
   await shot(phone.page, 'mobil')
+  await phone.page.keyboard.press('Escape')
+  await sleep(2500)
+  await phone.page.click('button[aria-label="Zaman makinesi"]')
+  await sleep(600)
+  check('telefonda zaman makinesi taşmaz', await phone.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+  await shot(phone.page, 'mobil-zaman')
   await phone.context.close()
 } catch (error) {
   check('senaryo tamamlandı', false, String(error).split('\n')[0])

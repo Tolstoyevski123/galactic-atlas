@@ -20,6 +20,27 @@ const METHODS: Record<string, { label: string; short: string }> = {
 export const methodLabel = (name: string | undefined): string => (name ? (METHODS[name]?.label ?? name) : '—')
 export const methodShort = (name: string | undefined): string => (name ? (METHODS[name]?.short ?? name) : '—')
 
+/**
+ * Discovery methods as drawn on the discovery timeline: the four that found nearly every planet,
+ * and the rest together. The order is the stacking order, and it is part of the palette: these
+ * four hues were checked as neighbours (colour-blind separation and contrast on the panel
+ * surface) in exactly this sequence. Gold, green and the accent blue are left out on purpose —
+ * elsewhere in the app they mean "hosts planets", "habitable zone" and "selected".
+ */
+export const METHOD_GROUPS: ReadonlyArray<{ key: string; label: string; color: string; title: string; methods: readonly string[] }> = [
+  { key: 'transit', label: 'Geçiş', color: '#3987e5', title: 'Gezegen yıldızının önünden geçerken ışığını azaltır', methods: ['Transit'] },
+  { key: 'rv', label: 'Dikine hız', color: '#d95926', title: 'Gezegen yıldızını ileri geri çeker; tayf çizgileri kayar', methods: ['Radial Velocity'] },
+  { key: 'lensing', label: 'Mikromercekleme', color: '#9085e9', title: 'Gezegenin kütleçekimi arkadaki bir yıldızın ışığını büker', methods: ['Microlensing'] },
+  { key: 'imaging', label: 'Görüntüleme', color: '#d55181', title: 'Gezegenin kendi ışığı doğrudan görüntülenir', methods: ['Imaging'] },
+  { key: 'other', label: 'Diğer', color: '#687188', title: 'Zamanlama yöntemleri, astrometri ve ötekiler', methods: [] },
+]
+
+/** Index into METHOD_GROUPS for an archive method name; anything unlisted lands in the last group. */
+export function methodGroup(name: string | undefined): number {
+  const index = METHOD_GROUPS.findIndex((group) => name !== undefined && group.methods.includes(name))
+  return index >= 0 ? index : METHOD_GROUPS.length - 1
+}
+
 export const PLANET_CLASS_LABEL: Record<PlanetClass, string> = {
   rocky: 'Kayaç gezegen',
   subneptune: 'Alt-Neptün',

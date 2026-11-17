@@ -35,12 +35,26 @@ export interface HygStar {
   x: number
   y: number
   z: number
+  /**
+   * Space velocity relative to the Sun, parsec per year, on the same equatorial axes as x/y/z.
+   * HYG derives it from proper motion and radial velocity; where the radial velocity was never
+   * measured only the motion across the sky is in here. All zero when nothing is known.
+   */
+  vx: number
+  vy: number
+  vz: number
 }
 
 function num(s: string | undefined): number {
   if (s === undefined || s === '') return NaN
   const v = Number(s)
   return Number.isFinite(v) ? v : NaN
+}
+
+/** Like num(), but a blank or unreadable cell counts as zero. */
+function numOrZero(s: string | undefined): number {
+  const v = num(s)
+  return Number.isFinite(v) ? v : 0
 }
 
 function int(s: string | undefined): number {
@@ -71,7 +85,8 @@ export function parseHyg(csv: string): HygStar[] {
     id: col('id'), hip: col('hip'), hd: col('hd'), gl: col('gl'), proper: col('proper'),
     ra: col('ra'), dec: col('dec'), dist: col('dist'), pmra: col('pmra'), pmdec: col('pmdec'),
     mag: col('mag'), absmag: col('absmag'), spect: col('spect'), ci: col('ci'),
-    x: col('x'), y: col('y'), z: col('z'), bayer: col('bayer'), flam: col('flam'), con: col('con'),
+    x: col('x'), y: col('y'), z: col('z'), vx: col('vx'), vy: col('vy'), vz: col('vz'),
+    bayer: col('bayer'), flam: col('flam'), con: col('con'),
   }
 
   const stars: HygStar[] = []
@@ -103,6 +118,9 @@ export function parseHyg(csv: string): HygStar[] {
       x: num(row[c.x]),
       y: num(row[c.y]),
       z: num(row[c.z]),
+      vx: numOrZero(row[c.vx]),
+      vy: numOrZero(row[c.vy]),
+      vz: numOrZero(row[c.vz]),
     })
   }
   return stars

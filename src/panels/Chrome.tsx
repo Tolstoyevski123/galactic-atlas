@@ -254,6 +254,15 @@ export function About({ atlas }: { atlas: Atlas }) {
                 yıldızlardan başlayarak çözülürler.
               </li>
               <li>Samanyolu bandı katalog verisi değil, doğru yönlendirilmiş prosedürel bir arka plandır.</li>
+              <li>
+                Zaman makinesi her yıldızı HYG’deki uzay hızıyla düz çizgide ilerletir: yaklaşık ±100.000 yıl için iyi bir rehber, ötesinde
+                kaba bir tahmindir (Galaksi’nin çekimi hesaba katılmaz). Dikine hızı ölçülmemiş yıldızlar yalnızca gökyüzünde kayar.
+              </li>
+              <li>
+                “Buradan gökyüzü” her yıldızı seçtiğiniz yıldızdan görüneceği yön ve parlaklıkla çizer; takımyıldız çizgileri aynı yıldızlar
+                arasında kalır, böylece tanıdık şekillerin nasıl bozulduğu görülür.
+              </li>
+              <li>Keşif tarihi, her sistemi NASA arşivine göre ilk gezegeninin bulunduğu yıl haritaya ekler.</li>
             </ul>
           </div>
 
@@ -262,7 +271,8 @@ export function About({ atlas }: { atlas: Atlas }) {
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[12.5px] text-muted">
               {[
                 ['/', 'Aramaya odaklan'],
-                ['Esc', 'Sistemden çık / seçimi kaldır'],
+                ['Esc', 'Sistemden ya da gökyüzünden çık / seçimi kaldır'],
+                ['Çift tık (gökyüzünde)', 'O yıldıza geç'],
                 ['H', 'Güneş’e dön'],
                 ['Çift tık', 'Gezegenli yıldızın sistemine dal'],
                 ['↑ ↓', 'Listede gezin (liste odaktayken)'],

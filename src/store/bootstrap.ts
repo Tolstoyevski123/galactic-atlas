@@ -33,7 +33,7 @@ function favoriteRows(atlas: Atlas, favorites: string[], table: 'stars' | 'plane
   return Int32Array.from(rows)
 }
 
-/** The hash that represents the current view: a planet, a system, a star, or nothing. */
+/** The hash that represents the current view: a planet, a system, a star, a star's sky, or nothing. */
 export function stateToHash(s: AtlasState): string {
   const atlas = s.atlas
   if (!atlas) return ''
@@ -41,6 +41,7 @@ export function stateToHash(s: AtlasState): string {
     if (s.selectedPlanet !== null) return `#${planetKey(atlas.planets[s.selectedPlanet])}`
     return `#${systemKey(atlas.systems[s.systemIndex])}`
   }
+  if (s.mode === 'sky' && s.skyStar !== null) return `#sky-${starKey(atlas, s.skyStar)}`
   if (s.selectedStar !== null) return `#${starKey(atlas, s.selectedStar)}`
   return ''
 }
@@ -61,6 +62,12 @@ export function applyHash(hash: string): boolean {
     const si = lookup.system(key)
     if (si < 0) return false
     s.openSystem(si)
+    return true
+  }
+  if (key.startsWith('sky-')) {
+    const i = lookup.star(key.slice(4))
+    if (i < 0) return false
+    s.openSky(i)
     return true
   }
   if (key.startsWith('star-')) {
@@ -127,6 +134,7 @@ function wire(client: FilterClient, atlas: Atlas): void {
   disposers.push(
     useAtlas.subscribe((s) => s.mode, syncHash),
     useAtlas.subscribe((s) => s.selectedStar, syncHash),
+    useAtlas.subscribe((s) => s.skyStar, syncHash),
     useAtlas.subscribe((s) => s.systemIndex, syncHash),
     useAtlas.subscribe((s) => s.selectedPlanet, syncHash),
   )
@@ -178,5 +186,5 @@ export function retryAtlas(): void {
 
 /** True when the page was opened with a link to a specific object (skips the intro fly-in). */
 export function openedWithDeepLink(): boolean {
-  return typeof window !== 'undefined' && /^#(star|system|planet)-/.test(window.location.hash)
+  return typeof window !== 'undefined' && /^#(star|system|planet|sky)-/.test(window.location.hash)
 }

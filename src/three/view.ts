@@ -19,9 +19,19 @@ export const view = {
   limit: 6.5,
   /** Distance at which a host marker has its nominal size: the camera–target distance. */
   markerRef: 30,
-  /** Sky mode: stars are drawn as directions seen from `origin` (used inside a system). */
+  /**
+   * Sky mode: stars are drawn as directions seen from `origin` — the backdrop inside a system, and
+   * the whole picture when standing at a star ("Buradan gökyüzü").
+   */
   sky: false,
   origin: new Vector3(),
+  /** Time machine: years from today (negative = past). Stars are drawn at position + velocity · epoch. */
+  epoch: 0,
+  /**
+   * Discovery timeline: hosts whose first planet was found after this (fractional) year are
+   * hidden, those found within the year before it flash. Infinity = no timeline, show everything.
+   */
+  year: Infinity,
   /** Overall star-field brightness, 0..1. */
   dim: 1,
   /** Camera position in scene coordinates. */
@@ -36,6 +46,36 @@ export const view = {
   insetRight: 0,
   /** Height covered by the bottom sheet on phones; the view centre moves up by half of it. */
   insetBottom: 0,
+}
+
+/** How long a year lasts while the discovery timeline plays, seconds. */
+export const SECONDS_PER_DISCOVERY_YEAR = 1.5
+
+/**
+ * Move view.year towards the year chosen on the discovery timeline (null = timeline closed).
+ * The value runs one ahead of the calendar — Y + 1 stands for "the end of year Y" — and it glides
+ * rather than jumps, so the hosts found in a year have a moment to flash as it passes.
+ */
+export function advanceDiscoveryYear(chosen: number | null, delta: number, instant: boolean): void {
+  if (chosen === null) {
+    view.year = Infinity
+    return
+  }
+  const goal = chosen + 1
+  if (instant || !Number.isFinite(view.year)) {
+    view.year = goal
+    return
+  }
+  const gap = goal - view.year
+  // One year per 1.5 s while playing; a jump made by hand catches up within a few tenths of a second.
+  const step = Math.max(1 / SECONDS_PER_DISCOVERY_YEAR, Math.abs(gap) * 10) * delta
+  view.year = Math.abs(gap) <= step ? goal : view.year + Math.sign(gap) * step
+}
+
+/** Stars closer to the sky-mode origin than this are the star being stood on: never drawn or picked. */
+export function originExclusion(): number {
+  // Wider far from the Sun, where 32-bit positions on the GPU are coarser than a fixed threshold.
+  return 1e-3 + view.origin.length() * 4e-6
 }
 
 /** The catalogue thins out beyond this distance from the Sun (parsec); exposure rises past it. */

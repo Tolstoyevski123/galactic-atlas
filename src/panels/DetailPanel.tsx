@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { planetKey, starDesignations, starKey, type Atlas, type PlanetRow } from '../data/atlas'
+import { planetKey, starDesignations, starDistanceAt, starKey, type Atlas, type PlanetRow } from '../data/atlas'
 import { constellationName } from '../data/constellations'
 import { methodLabel, PLANET_CLASS_LABEL, spectralColor } from '../data/labels'
 import {
   FLAG_ABSMAG_EST,
+  FLAG_NO_VEL,
   FLAG_SYNTHETIC,
   HZ_CONSERVATIVE,
   HZ_NONE,
@@ -12,19 +13,23 @@ import {
   SPECTRAL_CLASSES,
   type SystemRecord,
 } from '../data/schema'
-import { luminosityFromAbsMag, planetClass, raDecOf, radiusFromMass, starColor, teffFromBv } from '../lib/astro'
-import { DASH, fixed, formatDec, formatDistance, formatPeriod, formatRa, sig } from '../lib/format'
+import { luminosityFromAbsMag, PC_TO_LY, planetClass, raDecOf, radiusFromMass, starColor, stellarMotion, teffFromBv } from '../lib/astro'
+import { count, DASH, fixed, formatDec, formatDistance, formatPeriod, formatRa, sig } from '../lib/format'
 import { stateToHash } from '../store/bootstrap'
-import { useAtlas } from '../store/useAtlas'
+import { EPOCH_LIMIT, useAtlas } from '../store/useAtlas'
+import { effectiveMagnitude } from '../three/view'
+import { calendarLabel, relativeLabel } from './TimeMachine'
 import { Badge, cx, IconButton, Stat } from '../ui/controls'
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CloseIcon,
   CrosshairIcon,
+  HourglassIcon,
   LeafIcon,
   LinkIcon,
   OrbitIcon,
+  SkyIcon,
   StarFilledIcon,
   StarIcon,
 } from '../ui/icons'
@@ -150,8 +155,183 @@ function PlanetListItem({ planet, onClick, active }: { planet: PlanetRow; onClic
   )
 }
 
+/** Open the time machine at a date. */
+function travelTo(years: number): void {
+  const s = useAtlas.getState()
+  if (s.strip !== 'time') s.setStrip('time')
+  s.setEpochPlay(0)
+  s.setEpoch(years)
+}
+
+/** How the star moves through space, and when it passes closest to us. */
+function MotionSection({ atlas, star }: { atlas: Atlas; star: number }) {
+  const unit = useAtlas((s) => s.unit)
+  const epoch = useAtlas((s) => s.epoch)
+  const timeOpen = useAtlas((s) => s.strip === 'time')
+  if ((atlas.flags[star] & FLAG_NO_VEL) !== 0) {
+    return (
+      <Section title="Uzaydaki hareketi">
+        <p className="text-[12px] leading-relaxed text-muted">Bu yıldızın uzay hızı katalogda yok; zaman makinesinde yerinde durur.</p>
+      </Section>
+    )
+  }
+  const k = star * 3
+  const motion = stellarMotion(atlas.pos[k], atlas.pos[k + 1], atlas.pos[k + 2], atlas.vel[k], atlas.vel[k + 1], atlas.vel[k + 2])
+  if (!motion) return null
+  const reachable = motion.radialKnown && Math.abs(motion.closestYears) <= EPOCH_LIMIT && Math.abs(motion.closestYears) >= 1
+  const passed = motion.closestYears < 0
+
+  return (
+    <Section title="Uzaydaki hareketi">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <Stat label="Güneş’e göre hız" hint="Uzaydaki toplam hızı (öz hareket + dikine hız)">
+          {`${sig(motion.speed, 3)} km/s`}
+        </Stat>
+        <Stat label="Görüş doğrultusunda" hint="Pozitif: bizden uzaklaşıyor. Negatif: yaklaşıyor.">
+          {motion.radialKnown ? `${motion.radial < 0 ? 'yaklaşıyor' : 'uzaklaşıyor'} · ${sig(Math.abs(motion.radial), 3)} km/s` : <span className="text-muted">ölçülmemiş</span>}
+        </Stat>
+        {motion.radialKnown && (
+          <>
+            <Stat label="En yakın geçişi" hint="Düz çizgide hareket varsayımıyla">
+              {relativeLabel(motion.closestYears)}
+            </Stat>
+            <Stat label="O anki uzaklığı">{formatDistance(motion.closestDistance, unit)}</Stat>
+          </>
+        )}
+        {timeOpen && Math.abs(epoch) >= 0.5 && (
+          <Stat label={`${calendarLabel(epoch)} yılında`} hint="Zaman makinesinin seçili tarihinde Güneş’e uzaklığı">
+            {formatDistance(starDistanceAt(atlas, star, epoch), unit)}
+          </Stat>
+        )}
+      </dl>
+      {!motion.radialKnown && (
+        <p className="mt-2.5 text-[11.5px] leading-snug text-faint">
+          Dikine hızı ölçülmediği için yalnızca gökyüzündeki kayması biliniyor; ne zaman en yakın olacağı söylenemez.
+        </p>
+      )}
+      {reachable && (
+        <button
+          type="button"
+          onClick={() => travelTo(motion.closestYears)}
+          className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong px-2.5 text-[12.5px] font-medium text-ink transition-colors hover:bg-white/8"
+        >
+          <HourglassIcon size={14} /> {passed ? 'O zamana dön' : 'O zamana git'}
+        </button>
+      )}
+    </Section>
+  )
+}
+
+/** The sky of the star we are standing at: how the Sun looks from there, and what outshines everything. */
+function SkyCard({ atlas, star }: { atlas: Atlas; star: number }) {
+  const unit = useAtlas((s) => s.unit)
+  // Recount at most every 500 years of time-machine travel: the answers barely move in between.
+  const bucket = useAtlas((s) => Math.round(s.epoch / 500))
+  const isSol = star === 0
+  const facts = useMemo(() => {
+    const epoch = useAtlas.getState().epoch
+    const k = star * 3
+    const ox = atlas.pos[k] + atlas.vel[k] * epoch
+    const oy = atlas.pos[k + 1] + atlas.vel[k + 1] * epoch
+    const oz = atlas.pos[k + 2] + atlas.vel[k + 2] * epoch
+    let brightest = -1
+    let brightestMag = Infinity
+    let companion = -1
+    let companionMag = Infinity
+    let nakedEye = 0
+    for (let i = 0; i < atlas.count; i++) {
+      if (i === star) continue
+      const j = i * 3
+      const d = Math.hypot(atlas.pos[j] + atlas.vel[j] * epoch - ox, atlas.pos[j + 1] + atlas.vel[j + 1] * epoch - oy, atlas.pos[j + 2] + atlas.vel[j + 2] * epoch - oz)
+      if (d < 1e-6) continue
+      const m = effectiveMagnitude(atlas.absmag[i], d, 10)
+      // Within ~10,000 AU a star is part of the same system (Sirius B from Sirius A): a companion, not the night sky.
+      if (d < 0.05) {
+        if (m < companionMag) {
+          companionMag = m
+          companion = i
+        }
+        continue
+      }
+      if (m <= 6.5) nakedEye++
+      if (m < brightestMag) {
+        brightestMag = m
+        brightest = i
+      }
+    }
+    const sunDistance = Math.hypot(ox, oy, oz)
+    return { sunDistance, sunMag: effectiveMagnitude(atlas.absmag[0], sunDistance, 10), brightest, brightestMag, companion, companionMag, nakedEye }
+  }, [atlas, star, bucket])
+  const sunVisible = facts.sunMag <= 6.5
+  const lightYears = facts.sunDistance * PC_TO_LY
+
+  return (
+    <div className="sky-card animate-rise border-b border-line px-4 pt-4 pb-3.5">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent/12 text-accent">
+          <SkyIcon size={15} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="eyebrow">Buradan gökyüzü</p>
+          <h2 className="truncate font-display text-[16px] font-semibold text-white">{isSol ? 'Dünya’dan gökyüzü' : `${atlas.names[star]} gökyüzü`}</h2>
+        </div>
+        <IconButton label="Haritaya dön" tip="bottom" onClick={() => useAtlas.getState().exitSky()}>
+          <CloseIcon size={16} />
+        </IconButton>
+      </div>
+
+      {!isSol && (
+        <div className="mt-3 rounded-xl border border-line bg-black/20 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-[11px] text-faint">Güneş buradan</div>
+              <div className="font-display text-[15px] font-medium tabular-nums text-ink" data-sun-mag={fixed(facts.sunMag, 1)}>
+                {fixed(facts.sunMag, 1)} kadir
+              </div>
+            </div>
+            <Badge tone={sunVisible ? 'hz' : 'muted'}>{sunVisible ? 'çıplak gözle görünür' : 'çıplak gözle görünmez'}</Badge>
+          </div>
+          <p className="mt-1.5 text-[11.5px] leading-snug text-muted">
+            {formatDistance(facts.sunDistance, unit)} ötede. Buradan görülen Güneş ışığı{' '}
+            <span className="text-ink">{lightYears < 1.5 ? `${sig(lightYears * 12, 2)} ay` : `${Math.round(lightYears).toLocaleString('tr-TR')} yıl`}</span>{' '}
+            önce yola çıktı{lightYears >= 30 ? ` — ${calendarLabel(-lightYears)} civarında` : ''}.
+          </p>
+        </div>
+      )}
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+        <Stat label="En parlak yıldızı" hint="Bu noktadan en parlak görünen yıldız">
+          {facts.brightest >= 0 ? (
+            <button type="button" className="max-w-full truncate text-left hover:text-accent" onClick={() => useAtlas.getState().pickSkyStar(facts.brightest)}>
+              {facts.brightest === 0 ? 'Güneş' : atlas.names[facts.brightest]}{' '}
+              <span className="text-[12px] text-muted">{fixed(facts.brightestMag, 1)}</span>
+            </button>
+          ) : (
+            DASH
+          )}
+        </Stat>
+        <Stat label="Çıplak gözle görülen" hint="6,5 kadirden parlak görünen katalog yıldızları">
+          {count(facts.nakedEye)} yıldız
+        </Stat>
+      </dl>
+      {facts.companion >= 0 && (
+        <p className="mt-2.5 text-[11.5px] leading-snug text-muted">
+          Yakınında bir eşi var:{' '}
+          <button type="button" className="font-medium text-ink hover:text-accent" onClick={() => useAtlas.getState().pickSkyStar(facts.companion)}>
+            {atlas.names[facts.companion]}
+          </button>
+          , buradan {fixed(facts.companionMag, 1)} kadir
+          {facts.companionMag < -12.7 ? ' — dolunaydan da parlak.' : facts.companionMag < -4.6 ? ' — Venüs’ten de parlak.' : '.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function StarDetail({ atlas, star }: { atlas: Atlas; star: number }) {
   const unit = useAtlas((s) => s.unit)
+  const inSky = useAtlas((s) => s.mode === 'sky')
+  const skyStar = useAtlas((s) => s.skyStar)
   const store = useAtlas.getState
   const isSol = star === 0
   const systemIndex = atlas.systemOfStar[star]
@@ -266,11 +446,20 @@ function StarDetail({ atlas, star }: { atlas: Atlas; star: number }) {
               <OrbitIcon size={16} /> Sisteme dal
             </PrimaryButton>
           )}
-          <PrimaryButton tone="plain" onClick={() => store().selectStar(star, { fly: true })}>
-            <CrosshairIcon size={15} /> Yıldıza uç
-          </PrimaryButton>
+          {inSky && skyStar === star ? null : (
+            <PrimaryButton tone="plain" onClick={() => store().openSky(star)}>
+              <SkyIcon size={16} /> {isSol ? 'Gökyüzümüz' : 'Buradan gökyüzü'}
+            </PrimaryButton>
+          )}
+          {inSky && skyStar === star && (
+            <PrimaryButton tone="plain" onClick={() => store().exitSky()}>
+              <CrosshairIcon size={15} /> Haritada göster
+            </PrimaryButton>
+          )}
         </div>
       </div>
+
+      {!isSol && <MotionSection atlas={atlas} star={star} />}
 
       {isSol ? (
         <Section title="Güneş şu an">
@@ -547,6 +736,7 @@ export function DetailPanel({ atlas }: { atlas: Atlas }) {
   const mode = useAtlas((s) => s.mode)
   const systemIndex = useAtlas((s) => s.systemIndex)
   const selectedStar = useAtlas((s) => s.selectedStar)
+  const skyStar = useAtlas((s) => s.skyStar)
   // On phones the panel is a bottom sheet that can be folded down to its title.
   const [collapsed, setCollapsed] = useState(false)
   const subject = mode === 'system' && systemIndex !== null ? `system-${systemIndex}` : selectedStar !== null ? `star-${selectedStar}` : 'welcome'
@@ -557,6 +747,14 @@ export function DetailPanel({ atlas }: { atlas: Atlas }) {
   if (mode === 'system' && systemIndex !== null) {
     content = <SystemDetail key={subject} atlas={atlas} systemIndex={systemIndex} />
     title = atlas.systems[systemIndex].builtin ? 'Güneş Sistemi' : atlas.systems[systemIndex].host
+  } else if (mode === 'sky' && skyStar !== null) {
+    content = (
+      <>
+        <SkyCard key={`sky-${skyStar}`} atlas={atlas} star={skyStar} />
+        {selectedStar !== null && <StarDetail key={subject} atlas={atlas} star={selectedStar} />}
+      </>
+    )
+    title = skyStar === 0 ? 'Dünya’dan gökyüzü' : `${atlas.names[skyStar]} gökyüzü`
   } else if (selectedStar !== null) {
     content = <StarDetail key={subject} atlas={atlas} star={selectedStar} />
     title = atlas.names[selectedStar]

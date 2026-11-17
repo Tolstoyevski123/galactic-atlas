@@ -16,10 +16,14 @@ import {
   type StarSortKey,
 } from '../browser/filterEngine'
 import type { Atlas } from '../data/atlas'
+import { discoveryOf } from '../lib/discovery'
 import { prefersReducedMotion } from '../lib/motion'
 import { readJson, writeJson } from '../lib/storage'
 
-export type Mode = 'map' | 'system'
+/** The star map, one planetary system, or the sky as seen from a star. */
+export type Mode = 'map' | 'system' | 'sky'
+/** The two timelines share one strip along the bottom edge, so only one can be open. */
+export type Strip = 'discovery' | 'time'
 export type Tab = 'stars' | 'planets'
 export type Unit = 'ly' | 'pc'
 export type FlightKind = 'select' | 'dive' | 'home'
@@ -44,6 +48,9 @@ const DEFAULT_PREFS: Prefs = { unit: 'ly', showLabels: true, showMilkyWay: true,
 /** Duration of the fade that hides the switch between the map and a system, ms. */
 export const VEIL_MS = 380
 
+/** How far the time machine reaches either way, years. */
+export const EPOCH_LIMIT = 1_000_000
+
 export interface AtlasState extends Prefs {
   phase: 'loading' | 'ready' | 'error'
   progress: number
@@ -54,6 +61,8 @@ export interface AtlasState extends Prefs {
   /** Full-screen fade used while switching between the map and a system. */
   veil: boolean
   selectedStar: number | null
+  /** The star whose sky is on screen in sky mode. The selection may then be another star, picked in that sky. */
+  skyStar: number | null
   systemIndex: number | null
   selectedPlanet: number | null
   hoverStar: number | null
@@ -80,12 +89,29 @@ export interface AtlasState extends Prefs {
   simPaused: boolean
   toast: { text: string; nonce: number } | null
 
+  /** Which timeline strip is open, if any. */
+  strip: Strip | null
+  /** Discovery timeline: the map shows what was known by the end of this year. Null while the strip is closed. */
+  discoveryYear: number | null
+  discoveryPlaying: boolean
+  /** Time machine: years from today (negative = past). Always 0 while its strip is closed. */
+  epoch: number
+  /** Time machine playback: -1 backwards, 1 forwards, 0 paused. */
+  epochPlay: -1 | 0 | 1
+  /** Time machine playback speed, years per second. */
+  epochSpeed: number
+
   setProgress: (fraction: number) => void
   setReady: (atlas: Atlas) => void
   setError: (message: string) => void
   selectStar: (star: number | null, options?: { fly?: boolean }) => void
   openSystem: (system: number, planet?: number | null) => void
   exitSystem: () => void
+  /** Stand at a star and look out. Also how one moves from star to star while in sky mode. */
+  openSky: (star: number) => void
+  exitSky: () => void
+  /** Select a star seen in the sky without leaving the star we are standing at. */
+  pickSkyStar: (star: number | null) => void
   selectPlanet: (planet: number | null) => void
   diveArrived: (nonce: number) => void
   goHome: () => void
@@ -102,6 +128,12 @@ export interface AtlasState extends Prefs {
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void
   setUi: (patch: Partial<Pick<AtlasState, 'browserOpen' | 'browserWide' | 'filtersOpen' | 'aboutOpen' | 'simSpeed' | 'simPaused'>>) => void
   showToast: (text: string) => void
+  /** Open one timeline strip (closing the other) or, with null, close whichever is open. */
+  setStrip: (strip: Strip | null) => void
+  setDiscoveryYear: (year: number) => void
+  setDiscoveryPlaying: (playing: boolean) => void
+  setEpoch: (years: number) => void
+  setEpochPlay: (direction: -1 | 0 | 1, speed?: number) => void
 }
 
 // Transition bookkeeping lives outside the store: it is plumbing, not state anyone renders.
@@ -151,11 +183,19 @@ export const useAtlas = create<AtlasState>()(
       mode: 'map',
       veil: false,
       selectedStar: null,
+      skyStar: null,
       systemIndex: null,
       selectedPlanet: null,
       hoverStar: null,
       hoverPlanet: null,
       flight: null,
+
+      strip: null,
+      discoveryYear: null,
+      discoveryPlaying: false,
+      epoch: 0,
+      epochPlay: 0,
+      epochSpeed: 10_000,
 
       tab: 'stars',
       starFilter: EMPTY_STAR_FILTER,
@@ -184,13 +224,14 @@ export const useAtlas = create<AtlasState>()(
         const apply = () =>
           set({
             mode: 'map',
+            skyStar: null,
             systemIndex: null,
             selectedPlanet: null,
             hoverPlanet: null,
             selectedStar: star,
             flight: fly ? { nonce: ++nonce, kind: 'select', star } : get().flight,
           })
-        if (get().mode === 'system') throughVeil(token, apply)
+        if (get().mode !== 'map') throughVeil(token, apply)
         else apply()
       },
 
@@ -207,6 +248,7 @@ export const useAtlas = create<AtlasState>()(
           throughVeil(token, () =>
             set({
               mode: 'system',
+              skyStar: null,
               systemIndex: system,
               selectedPlanet: planet,
               selectedStar: sys.star >= 0 ? sys.star : get().selectedStar,
@@ -215,8 +257,8 @@ export const useAtlas = create<AtlasState>()(
               simPaused: false,
             }),
           )
-        // Already inside another system, nowhere to fly to, or motion is unwelcome: just cross-fade.
-        if (state.mode === 'system' || sys.star < 0 || prefersReducedMotion()) {
+        // Not on the map, nowhere to fly to, or motion is unwelcome: just cross-fade.
+        if (state.mode !== 'map' || sys.star < 0 || prefersReducedMotion()) {
           enter()
           return
         }
@@ -240,6 +282,40 @@ export const useAtlas = create<AtlasState>()(
         throughVeil(token, () => set({ mode: 'map', systemIndex: null, selectedPlanet: null, hoverPlanet: null }))
       },
 
+      openSky: (star) => {
+        const state = get()
+        if (!state.atlas || !(star >= 0 && star < state.atlas.count)) return
+        if (state.mode === 'sky' && state.skyStar === star) {
+          if (state.selectedStar !== star) set({ selectedStar: star })
+          return
+        }
+        const token = cancelTransition()
+        throughVeil(token, () =>
+          set({
+            mode: 'sky',
+            skyStar: star,
+            selectedStar: star,
+            systemIndex: null,
+            selectedPlanet: null,
+            hoverStar: null,
+            hoverPlanet: null,
+          }),
+        )
+      },
+
+      exitSky: () => {
+        if (get().mode !== 'sky') return
+        const token = cancelTransition()
+        // Back on the map the star we were standing at is the selection again.
+        throughVeil(token, () => set({ mode: 'map', selectedStar: get().skyStar, skyStar: null, hoverStar: null }))
+      },
+
+      pickSkyStar: (star) => {
+        const state = get()
+        if (state.mode !== 'sky') return
+        set({ selectedStar: star ?? state.skyStar })
+      },
+
       selectPlanet: (planet) => set({ selectedPlanet: planet }),
 
       goHome: () => {
@@ -247,13 +323,14 @@ export const useAtlas = create<AtlasState>()(
         const apply = () =>
           set({
             mode: 'map',
+            skyStar: null,
             systemIndex: null,
             selectedPlanet: null,
             hoverPlanet: null,
             selectedStar: null,
             flight: { nonce: ++nonce, kind: 'home', star: 0 },
           })
-        if (get().mode === 'system') throughVeil(token, apply)
+        if (get().mode !== 'map') throughVeil(token, apply)
         else apply()
       },
 
@@ -293,6 +370,40 @@ export const useAtlas = create<AtlasState>()(
 
       setUi: (patch) => set(patch),
       showToast: (text) => set({ toast: { text, nonce: ++nonce } }),
+
+      setStrip: (strip) => {
+        const atlas = get().atlas
+        // Each strip owns one dial; closing it (or opening the other) puts that dial back, so the
+        // map never stays in a state whose control is no longer on screen.
+        set({
+          strip,
+          discoveryYear: strip === 'discovery' && atlas ? discoveryOf(atlas).lastYear : null,
+          discoveryPlaying: false,
+          epoch: strip === 'time' ? get().epoch : 0,
+          epochPlay: 0,
+        })
+      },
+
+      setDiscoveryYear: (year) => {
+        const state = get()
+        if (state.strip !== 'discovery' || !state.atlas) return
+        const stats = discoveryOf(state.atlas)
+        const clamped = Math.min(stats.lastYear, Math.max(stats.firstYear, Math.round(year)))
+        if (clamped !== state.discoveryYear) set({ discoveryYear: clamped })
+      },
+      setDiscoveryPlaying: (playing) => {
+        if (get().strip === 'discovery' && get().discoveryPlaying !== playing) set({ discoveryPlaying: playing })
+      },
+
+      setEpoch: (years) => {
+        if (get().strip !== 'time') return
+        const clamped = Math.min(EPOCH_LIMIT, Math.max(-EPOCH_LIMIT, Number.isFinite(years) ? years : 0))
+        if (clamped !== get().epoch) set({ epoch: clamped })
+      },
+      setEpochPlay: (direction, speed) => {
+        if (get().strip !== 'time') return
+        set({ epochPlay: direction, epochSpeed: speed ?? get().epochSpeed })
+      },
     }
   }),
 )

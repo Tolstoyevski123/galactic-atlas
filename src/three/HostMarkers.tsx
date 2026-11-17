@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Atlas } from '../data/atlas'
+import { discoveryOf, firstYearOfStars } from '../lib/discovery'
 import { buildHostOrbits } from './hostOrbits'
 import type { FilterMask } from './useFilterMask'
 import { view } from './view'
@@ -24,7 +25,11 @@ const vertexShader = /* glsl */ `
   attribute vec4 aPhaseA;
   attribute vec4 aPhaseB;
   attribute vec3 aInfo;
+  attribute vec3 aVel;
+  attribute float aYear;
 
+  uniform float uEpoch;
+  uniform float uYear;
   uniform float uPixelRatio;
   uniform float uMarkerRef;
   uniform vec3 uTarget;
@@ -47,11 +52,13 @@ const vertexShader = /* glsl */ `
   varying vec4 vAngleB;
 
   void main() {
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    // Time machine (CPU twin: starPositionAt).
+    vec3 p = position + aVel * uEpoch;
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
     float dist = length(mv.xyz);
 
     // Keep in step with hostRingness() / hostMarkerRadius() in view.ts.
-    float toTarget = distance(position, uTarget);
+    float toTarget = distance(p, uTarget);
     float focus = 1.0 - smoothstep(0.22 * uMarkerRef, 0.6 * uMarkerRef, toTarget);
     float local = 1.0 - smoothstep(60.0, 170.0, uMarkerRef);
     float ringness = focus * local;
@@ -67,9 +74,16 @@ const vertexShader = /* glsl */ `
     float dotAlpha = 0.28 + 0.42 * smoothstep(1.15, 2.5, dotRadius);
     vAlpha = mix(dotAlpha, 1.0, ringness) * uOpacity * mix(1.0, mix(0.05, 1.0, aFade), uFilterMix);
 
+    // Discovery timeline (CPU twin: isDiscovered). aYear 0 = always known. Newly found hosts flash for a year.
+    float age = uYear - aYear;
+    if (aYear > 0.5 && age <= 0.0) vAlpha = 0.0;
+    float flash = aYear > 0.5 ? 1.0 - smoothstep(0.0, 1.0, age) : 0.0;
+    vAlpha = min(1.6, vAlpha * (1.0 + 1.6 * flash));
+    vHalfPx *= 1.0 + 1.4 * flash;
+
     // How the orbital plane projects onto the screen: an ellipse whose minor axis lies along
     // the projected normal and is foreshortened by |normal · view direction|.
-    float facing = dot(aNormal, normalize(cameraPosition - position));
+    float facing = dot(aNormal, normalize(cameraPosition - p));
     vTilt = max(abs(facing), 0.07);
     vec2 projected = (mat3(viewMatrix) * aNormal).xy;
     float len = length(projected);
@@ -191,6 +205,8 @@ export function HostMarkers({ atlas, filter, visible }: Props) {
           uFilterMix: { value: 0 },
           uOpacity: { value: 0 },
           uTime: { value: 0 },
+          uEpoch: { value: 0 },
+          uYear: { value: 1e9 },
         },
         transparent: true,
         blending: THREE.AdditiveBlending,
@@ -216,8 +232,13 @@ export function HostMarkers({ atlas, filter, visible }: Props) {
     g.setAttribute('aPhaseB', new THREE.BufferAttribute(orbits.phaseB, 4))
     g.setAttribute('aInfo', new THREE.BufferAttribute(orbits.info, 3))
     g.setAttribute('aFade', fade)
+    // Per marker: velocity (time machine) and the year its first planet was found (discovery timeline).
+    const vel = new Float32Array(orbits.stars.length * 3)
+    orbits.stars.forEach((star, k) => vel.set(atlas.vel.subarray(star * 3, star * 3 + 3), k * 3))
+    g.setAttribute('aVel', new THREE.BufferAttribute(vel, 3))
+    g.setAttribute('aYear', new THREE.BufferAttribute(firstYearOfStars(discoveryOf(atlas), atlas.systemOfStar, orbits.stars), 1))
     return g
-  }, [orbits, fade])
+  }, [atlas, orbits, fade])
 
   useEffect(() => () => geometry.dispose(), [geometry])
   useEffect(() => () => material.dispose(), [material])
@@ -240,6 +261,8 @@ export function HostMarkers({ atlas, filter, visible }: Props) {
     ;(u.uTarget.value as THREE.Vector3).copy(view.target)
     u.uFilterMix.value = filterMix.current
     u.uTime.value = clock.current
+    u.uEpoch.value = view.epoch
+    u.uYear.value = Number.isFinite(view.year) ? view.year : 1e9
     u.uOpacity.value += ((visible ? 1 : 0) - u.uOpacity.value) * Math.min(1, delta * 6)
   })
 

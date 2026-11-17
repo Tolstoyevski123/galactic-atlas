@@ -221,6 +221,51 @@ export function RangeField({ label, unit, value, onChange, placeholder = ['min',
   )
 }
 
+interface StripProps {
+  icon: ReactNode
+  title: string
+  /** Live summary next to the title. */
+  status: ReactNode
+  onClose: () => void
+  children: ReactNode
+  label: string
+}
+
+/**
+ * Bottom strip that holds a timeline (discovery history, time machine). Publishes its height as
+ * --strip-h on the root so the detail panel can make room for it.
+ */
+export function StripShell({ icon, title, status, onClose, children, label }: StripProps) {
+  const [node, setNode] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!node) return
+    const root = document.documentElement
+    const update = () => root.style.setProperty('--strip-h', `${Math.ceil(node.getBoundingClientRect().height) + 8}px`)
+    update()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+    observer?.observe(node)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty('--strip-h')
+    }
+  }, [node])
+  return (
+    <section ref={setNode} aria-label={label} className="strip glass pointer-events-auto mb-2 animate-rise rounded-[16px] px-3 pt-2.5 pb-3">
+      <header className="flex items-center gap-2">
+        <span className="grid size-6 shrink-0 place-items-center rounded-md bg-white/6 text-accent">{icon}</span>
+        <h2 className="font-display text-[13.5px] font-semibold text-white">{title}</h2>
+        <div className="min-w-0 flex-1 truncate text-[12px] tabular-nums text-muted">{status}</div>
+        <IconButton label={`${title} şeridini kapat`} size="sm" tip="none" onClick={onClose}>
+          <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </IconButton>
+      </header>
+      {children}
+    </section>
+  )
+}
+
 /** Label + value pair used in the detail panels. */
 export function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (

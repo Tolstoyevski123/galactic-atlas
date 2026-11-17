@@ -15,17 +15,19 @@ import {
   sortRows,
   type StarTable,
 } from '../src/browser/filterEngine'
-import { buildKeyLookup, decodeAtlas, planetKey, starKey, systemKey } from '../src/data/atlas'
+import { buildKeyLookup, decodeAtlas, planetKey, starDistanceAt, starKey, starPositionAt, systemKey } from '../src/data/atlas'
 import { bayerSearchForms, fold, formatBayer } from '../src/data/names'
-import { HZ_CONSERVATIVE, HZ_NONE, type StarsMeta, type SystemsFile } from '../src/data/schema'
+import { FLAG_NO_VEL, FLAG_SYNTHETIC, HZ_CONSERVATIVE, HZ_NONE, type StarsMeta, type SystemsFile } from '../src/data/schema'
 import {
   equatorialToScene,
+  KMS_PER_PC_YR,
   orbitRadius,
   orbitState,
   planetClass,
   raDecOf,
   radiusFromMass,
   solveKepler,
+  stellarMotion,
   teffFromBv,
   teffToRgb,
 } from '../src/lib/astro'
@@ -70,6 +72,26 @@ describe('astronomy helpers', () => {
     expect(orbitState(Math.PI, e).r).toBeCloseTo(1 + e, 6) // apoapsis
     const s = orbitState(2, e)
     expect(orbitRadius(s.nu, e)).toBeCloseTo(s.r, 6)
+  })
+
+  it('finds when a star passes closest to the Sun', () => {
+    // Barnard's Star, straight from HYG (equatorial parsec and parsec per year).
+    const barnard = stellarMotion(-0.017373, -1.816613, 0.149123, -0.00000591, 0.0001204, 0.00007888)!
+    expect(barnard.speed).toBeCloseTo(141, 0)
+    expect(barnard.radial).toBeLessThan(-100) // approaching
+    expect(barnard.radialKnown).toBe(true)
+    expect(barnard.closestYears).toBeGreaterThan(9000)
+    expect(barnard.closestYears).toBeLessThan(11000)
+    expect(barnard.closestDistance).toBeCloseTo(1.12, 1) // about 3.7 light-years
+    // Receding: the closest approach is behind it.
+    expect(stellarMotion(10, 0, 0, 1e-5, 2e-6, 0)!.closestYears).toBeLessThan(0)
+    // Only a drift across the sky: the radial velocity is unknown, and "closest" is simply now.
+    const drifting = stellarMotion(10, 0, 0, 0, 2e-5, 0)!
+    expect(drifting.radialKnown).toBe(false)
+    expect(drifting.closestYears).toBeCloseTo(0, 9)
+    expect(drifting.closestDistance).toBeCloseTo(10, 9)
+    expect(stellarMotion(10, 0, 0, 0, 0, 0)).toBeNull()
+    expect(stellarMotion(0, 0, 0, 1e-5, 0, 0)).toBeNull()
   })
 
   it('gives plausible star colours and planet sizes', () => {
@@ -313,6 +335,66 @@ describe.skipIf(!hasData)('generated catalogue', () => {
     for (let i = 2; i < atlas.hygCount; i++) expect(atlas.mag[i]).toBeGreaterThanOrEqual(atlas.mag[i - 1])
     expect(atlas.pos.every(Number.isFinite)).toBe(true)
     expect(atlas.absmag.every(Number.isFinite)).toBe(true)
+  })
+
+  it('carries space velocities, rotated into the scene frame like the positions', () => {
+    expect(atlas.vel).toHaveLength(atlas.count * 3)
+    expect(atlas.vel.every(Number.isFinite)).toBe(true)
+    expect(atlas.meta.stats.starsWithVelocity).toBeGreaterThan(100000)
+    // The Sun defines the frame; synthetic hosts have no measured motion and say so.
+    expect(Math.hypot(atlas.vel[0], atlas.vel[1], atlas.vel[2])).toBe(0)
+    expect(atlas.flags[0] & FLAG_NO_VEL).toBe(0)
+    let moving = 0
+    let mismatched = 0
+    for (let i = 1; i < atlas.count; i++) {
+      const still = atlas.vel[i * 3] === 0 && atlas.vel[i * 3 + 1] === 0 && atlas.vel[i * 3 + 2] === 0
+      if (((atlas.flags[i] & FLAG_NO_VEL) !== 0) !== still) mismatched++
+      if ((atlas.flags[i] & FLAG_SYNTHETIC) !== 0 && !still) mismatched++
+      if (!still) moving++
+    }
+    expect(mismatched).toBe(0)
+    expect(moving).toBe(atlas.meta.stats.starsWithVelocity)
+
+    const lookup = buildKeyLookup(atlas)
+    const speed = (i: number) => Math.hypot(atlas.vel[i * 3], atlas.vel[i * 3 + 1], atlas.vel[i * 3 + 2]) * KMS_PER_PC_YR
+    expect(speed(lookup.star('star-32349'))).toBeCloseTo(19.3, 0) // Sirius
+    expect(speed(lookup.star('star-87937'))).toBeCloseTo(141, 0) // Barnard's Star
+    expect(speed(lookup.star('star-69673'))).toBeCloseTo(122, 0) // Arcturus
+  })
+
+  it('moves stars through time: Barnard’s Star closes in, Sirius does not stay put', () => {
+    const lookup = buildKeyLookup(atlas)
+    const barnard = lookup.star('star-87937')
+    const sirius = lookup.star('star-32349')
+    const p = { x: 0, y: 0, z: 0 }
+
+    // Today is exactly the stored position.
+    starPositionAt(atlas, barnard, 0, p)
+    expect([p.x, p.y, p.z]).toEqual([...atlas.pos.slice(barnard * 3, barnard * 3 + 3)])
+    expect(starDistanceAt(atlas, barnard, 0)).toBeCloseTo(atlas.dist[barnard], 5)
+
+    // In about ten thousand years Barnard's Star is at its nearest: some 3.7 light-years.
+    expect(atlas.dist[barnard]).toBeCloseTo(1.82, 1)
+    const later = starDistanceAt(atlas, barnard, 10000)
+    expect(later).toBeGreaterThan(1.05)
+    expect(later).toBeLessThan(1.25)
+    starPositionAt(atlas, barnard, 10000, p)
+    expect(Math.hypot(p.x, p.y, p.z)).toBeCloseTo(later, 9)
+    const k = barnard * 3
+    const motion = stellarMotion(atlas.pos[k], atlas.pos[k + 1], atlas.pos[k + 2], atlas.vel[k], atlas.vel[k + 1], atlas.vel[k + 2])!
+    expect(motion.closestYears).toBeGreaterThan(9000)
+    expect(motion.closestYears).toBeLessThan(11000)
+    expect(starDistanceAt(atlas, barnard, motion.closestYears)).toBeCloseTo(motion.closestDistance, 6)
+    expect(starDistanceAt(atlas, barnard, motion.closestYears + 2000)).toBeGreaterThan(motion.closestDistance)
+
+    // Sirius has shifted by about two parsecs after 100,000 years, and its distance has changed.
+    const then = starPositionAt(atlas, sirius, 100000, { x: 0, y: 0, z: 0 })
+    const moved = Math.hypot(then.x - atlas.pos[sirius * 3], then.y - atlas.pos[sirius * 3 + 1], then.z - atlas.pos[sirius * 3 + 2])
+    expect(moved).toBeGreaterThan(1.5)
+    expect(moved).toBeLessThan(2.5)
+    expect(Math.abs(starDistanceAt(atlas, sirius, 100000) - atlas.dist[sirius])).toBeGreaterThan(0.2)
+    // The Sun never moves: velocities are relative to it.
+    expect(starDistanceAt(atlas, 0, 1e6)).toBe(0)
   })
 
   it('finds well-known objects by their shareable keys', () => {

@@ -14,6 +14,7 @@ import {
   FLAG_ABSMAG_EST,
   FLAG_DIST_NASA,
   FLAG_HOST,
+  FLAG_NO_VEL,
   FLAG_SYNTHETIC,
   HZ_CONSERVATIVE,
   HZ_OPTIMISTIC,
@@ -128,10 +129,14 @@ function groupHosts(rows: NasaRow[]): HostGroup[] {
 
 function hygToRow(star: HygStar, flags: number): StarRow {
   const isSol = star.id === 0
+  // Velocities are relative to the Sun, which therefore stands still by definition. Any other star
+  // without a measured motion is flagged, so the app can say that it only appears to stay put.
+  const moving = !isSol && (star.vx !== 0 || star.vy !== 0 || star.vz !== 0)
   return {
     x: isSol ? 0 : star.x,
     y: isSol ? 0 : star.y,
     z: isSol ? 0 : star.z,
+    vel: moving ? [star.vx, star.vy, star.vz] : [0, 0, 0],
     mag: star.mag,
     absmag: star.absmag,
     ci: star.ci,
@@ -141,7 +146,7 @@ function hygToRow(star: HygStar, flags: number): StarRow {
     spect: star.spect,
     spectClass: spectralClass(star.spect),
     con: star.con,
-    flags,
+    flags: moving || isSol ? flags : flags | FLAG_NO_VEL,
     proper: star.proper,
     bayer: star.bayer,
     flam: star.flam,
@@ -158,7 +163,7 @@ const absoluteMagnitude = (mag: number, dist: number): number => mag - 5 * Math.
 
 function syntheticRow(group: HostGroup, con: string): StarRow {
   const [x, y, z] = positionAt(group.ra, group.dec, group.dist)
-  let flags = FLAG_SYNTHETIC | FLAG_HOST
+  let flags = FLAG_SYNTHETIC | FLAG_HOST | FLAG_NO_VEL // the archive's composite table carries no space motion
 
   // Absolute magnitude drives how the star is drawn, so it must always be finite.
   let absmag: number
@@ -183,6 +188,7 @@ function syntheticRow(group: HostGroup, con: string): StarRow {
 
   return {
     x, y, z,
+    vel: [0, 0, 0],
     mag: group.vmag,
     absmag,
     ci,
@@ -302,6 +308,9 @@ async function main(): Promise<void> {
       const dist = groups[gi].dist
       const row = hygToRow(star, hostFlag | FLAG_DIST_NASA)
       ;[row.x, row.y, row.z] = positionAt(star.raDeg, star.decDeg, dist)
+      // HYG scaled this star's velocity with its placeholder distance, so it means nothing here.
+      row.vel = [0, 0, 0]
+      row.flags |= FLAG_NO_VEL
       row.absmag = absoluteMagnitude(star.mag, dist)
       kept.push({ row, hygIndex: i })
       rescuedByNasa++
@@ -484,6 +493,7 @@ async function main(): Promise<void> {
     hygDroppedNoDistance: droppedNoDistance,
     hygRescuedWithNasaDistance: rescuedByNasa,
     syntheticHosts: synthetic.length,
+    starsWithVelocity: starRows.reduce((n, r) => n + ((r.flags & FLAG_NO_VEL) === 0 && r.hygId !== 0 ? 1 : 0), 0),
     hosts: groups.length,
     hostsMatchedHip: methodCounts.hip,
     hostsMatchedHd: methodCounts.hd,

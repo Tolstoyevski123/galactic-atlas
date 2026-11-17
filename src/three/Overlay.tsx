@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import { useFrame } from '@react-three/fiber'
-import type { Atlas } from '../data/atlas'
+import { Vector3 } from 'three'
+import { starDistanceAt, type Atlas } from '../data/atlas'
 import { starColor } from '../lib/astro'
 import { formatDistance } from '../lib/format'
 import { useAtlas } from '../store/useAtlas'
+import { drawnPosition, hostVisible } from './Picker'
 import { ScreenProjector } from './project'
 import type { FilterMask } from './useFilterMask'
 import { effectiveMagnitude, hostMarkerRadius, starSize, view } from './view'
+
+const at = new Vector3()
 
 const POOL = 56
 const MAX_HOST_LABELS = 16
@@ -46,6 +50,9 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
     unit: '',
     filter: filter,
     still: 0,
+    epoch: 0,
+    year: Infinity,
+    sky: false,
   })
 
   /** Stars with a proper name: the only ones that get a label without being a host. */
@@ -84,13 +91,13 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
     const d = dom.current
     if (!d) return
     const store = useAtlas.getState()
-    const pos = atlas.pos
     const width = state.size.width
     const height = state.size.height
     const p = projector.current
     p.update(state.camera, width, height)
     const inMap = store.mode === 'map'
-    const masked = filterRef.current.active ? filterRef.current.mask : null
+    const inSky = store.mode === 'sky'
+    const masked = filterRef.current.active && inMap ? filterRef.current.mask : null
 
     // Nothing moved and nothing was selected or hovered: leave the DOM alone this frame.
     const m = state.camera.matrixWorld.elements
@@ -101,7 +108,8 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
     const seen = last.current
     if (
       signature === seen.signature && store.selectedStar === seen.selected && store.hoverStar === seen.hovered &&
-      store.showLabels === seen.labels && store.mode === seen.mode && store.unit === seen.unit && filterRef.current === seen.filter
+      store.showLabels === seen.labels && store.mode === seen.mode && store.unit === seen.unit && filterRef.current === seen.filter &&
+      view.epoch === seen.epoch && view.year === seen.year && view.sky === seen.sky
     ) {
       seen.still++
       // Let label selection settle for a few frames after the last change, then idle.
@@ -114,25 +122,21 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
       seen.mode = store.mode
       seen.unit = store.unit
       seen.filter = filterRef.current
+      seen.epoch = view.epoch
+      seen.year = view.year
+      seen.sky = view.sky
       seen.still = 0
     }
 
-    /** Radius in px of the marker drawn at a star (0 unless it hosts planets or is the Sun). */
+    /** Radius in px of the marker drawn at a star (0 unless it hosts planets or is the Sun; none in a star's sky). */
     const markerRadius = (star: number): number => {
       const rings = star === SOL ? 8 : atlas.planetCount[star]
-      if (rings === 0) return 0
-      const x = pos[star * 3]
-      const y = pos[star * 3 + 1]
-      const z = pos[star * 3 + 2]
-      return hostMarkerRadius(
-        Math.hypot(x - view.camera.x, y - view.camera.y, z - view.camera.z),
-        view.markerRef,
-        Math.hypot(x - view.target.x, y - view.target.y, z - view.target.z),
-        rings,
-      )
+      if (rings === 0 || view.sky || !hostVisible(atlas, star)) return 0
+      const distance = drawnPosition(atlas, star, at)
+      return hostMarkerRadius(distance, view.markerRef, at.distanceTo(view.target), rings)
     }
     const place = (element: HTMLElement, star: number, dx = 0): boolean => {
-      if (!p.project(pos[star * 3], pos[star * 3 + 1], pos[star * 3 + 2])) return false
+      if (drawnPosition(atlas, star, at) < 0 || !p.project(at.x, at.y, at.z)) return false
       if (p.x < -40 || p.x > width + 40 || p.y < -40 || p.y > height + 40) return false
       const transform = `translate3d(${(p.x + dx).toFixed(1)}px, ${p.y.toFixed(1)}px, 0)`
       if (element.style.transform !== transform) element.style.transform = transform
@@ -151,8 +155,9 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
     }
 
     // ── Reticles and tooltip follow their stars every frame.
-    const selected = inMap ? store.selectedStar : null
-    const hovered = inMap && store.hoverStar !== selected ? store.hoverStar : null
+    const onSky = inMap || inSky
+    const selected = onSky ? store.selectedStar : null
+    const hovered = onSky && store.hoverStar !== selected ? store.hoverStar : null
     let selectedSize = 34
     if (selected !== null && place(d.selected, selected)) {
       const isHost = atlas.planetCount[selected] > 0
@@ -169,10 +174,12 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
       show(d.hover, true)
       place(d.tip, hovered, hoverSize / 2 - 13)
       const planets = atlas.planetCount[hovered]
+      // In a star's sky, how far is what you point at from where you stand; on the map, from the Sun.
+      const distance = inSky ? drawnPosition(atlas, hovered, at) : starDistanceAt(atlas, hovered, view.epoch)
       const text =
-        hovered === SOL
+        hovered === SOL && !inSky
           ? 'Güneş · Güneş Sistemi'
-          : `${atlas.names[hovered]} · ${formatDistance(atlas.dist[hovered], store.unit)}` +
+          : `${atlas.names[hovered]} · ${inSky ? 'buradan ' : ''}${formatDistance(distance, store.unit)}` +
             (planets > 0 ? ` · ${planets} gezegen` : '')
       if (d.tip.textContent !== text) d.tip.textContent = text
       d.tip.classList.toggle('star-tip--host', planets > 0)
@@ -188,7 +195,7 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
 
     // ── Labels: re-choose which stars are labelled a few times per second, move them every frame.
     frame.current++
-    const showLabels = inMap && store.showLabels
+    const showLabels = onSky && store.showLabels
     if (!showLabels) {
       for (const slot of d.slots) {
         if (slot.star >= 0) {
@@ -213,18 +220,17 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
       const reach2 = reach * reach
       const nearest: Array<{ star: number; d2: number }> = []
       const hosts = atlas.hosts
-      for (let k = 0; k < hosts.length; k++) {
+      // (In a star's sky there are no markers, and no orbit target to be near: hosts compete by brightness below.)
+      for (let k = 0; k < (inSky ? 0 : hosts.length); k++) {
         const i = hosts[k]
-        if (i === selected || (masked && masked[i] === 0)) continue
-        const dx = pos[i * 3] - target.x
-        const dy = pos[i * 3 + 1] - target.y
-        const dz = pos[i * 3 + 2] - target.z
-        const d2 = dx * dx + dy * dy + dz * dz
+        if (i === selected || (masked && masked[i] === 0) || !hostVisible(atlas, i)) continue
+        drawnPosition(atlas, i, at)
+        const d2 = at.distanceToSquared(target)
         if (d2 > reach2) continue
         if (nearest.length === MAX_HOST_LABELS && d2 >= nearest[nearest.length - 1].d2) continue
-        let at = nearest.length
-        while (at > 0 && nearest[at - 1].d2 > d2) at--
-        nearest.splice(at, 0, { star: i, d2 })
+        let slot = nearest.length
+        while (slot > 0 && nearest[slot - 1].d2 > d2) slot--
+        nearest.splice(slot, 0, { star: i, d2 })
         if (nearest.length > MAX_HOST_LABELS) nearest.pop()
       }
       nearest.forEach((h, rank) => candidates.push({ star: h.star, kind: 'host', priority: 1e6 - rank }))
@@ -233,8 +239,9 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
       const bright: Array<{ star: number; size: number }> = []
       for (let k = 0; k < named.length; k++) {
         const i = named[k]
-        if (i === selected || atlas.planetCount[i] > 0 || (masked && masked[i] === 0)) continue
-        const dist = Math.hypot(pos[i * 3] - cam.x, pos[i * 3 + 1] - cam.y, pos[i * 3 + 2] - cam.z)
+        if (i === selected || (!inSky && atlas.planetCount[i] > 0) || (masked && masked[i] === 0)) continue
+        const dist = drawnPosition(atlas, i, at)
+        if (dist < 0) continue
         const size = starSize(effectiveMagnitude(atlas.absmag[i], dist, view.refDist), view.limit)
         if (size >= 4.6) bright.push({ star: i, size })
       }
@@ -248,7 +255,7 @@ export function Overlay({ atlas, filter, container }: { atlas: Atlas; filter: Fi
       for (const c of candidates) {
         if (wanted.size >= POOL) break
         const i = c.star
-        if (!p.project(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2])) continue
+        if (drawnPosition(atlas, i, at) < 0 || !p.project(at.x, at.y, at.z)) continue
         const x0 = p.x + 9 + labelShift(i, c.kind)
         const y0 = p.y - 9
         const x1 = x0 + atlas.names[i].length * 6.4 + 10
